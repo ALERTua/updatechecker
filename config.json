@@ -1,0 +1,25 @@
+{
+  "gw2_launch_buddy": {
+    "url": "https://github.com/TheCheatsrichter/Gw2_Launchbuddy",
+    "target": "G:\\Games\\GW2\\_tools",
+    "git_asset": "Gw2.Launchbuddy.exe",
+    "kill_if_locked": "G:\\Games\\GW2\\_tools\\Gw2.Launchbuddy.exe",
+    "relaunch": true,
+    "launch": false,
+    "launch_what": "G:\\Games\\GW2\\_tools\\Gw2.Launchbuddy.exe",
+    "arguments": null
+  },
+  "arcdps": {
+    "url": "https://www.deltaconnected.com/arcdps/x64/d3d9.dll",
+    "target": "G:\\Games\\GW2\\bin64",
+    "md5": "https://www.deltaconnected.com/arcdps/x64/d3d9.dll.md5sum"
+  },
+  "arcdps_buildtemplates": {
+    "url": "https://www.deltaconnected.com/arcdps/x64/buildtemplates/d3d9_arcdps_buildtemplates.dll",
+    "target": "G:\\Games\\GW2\\bin64"
+  },
+  "arcdps_extras": {
+    "url": "https://www.deltaconnected.com/arcdps/x64/extras/d3d9_arcdps_extras.dll",
+    "target": "G:\\Games\\GW2\\bin64"
+  }
+}
