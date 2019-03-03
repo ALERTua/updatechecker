@@ -7,6 +7,7 @@ import re
 import shutil
 import sys
 import urllib.request
+import zipfile
 from functools import partial
 from pathlib import Path
 
@@ -120,7 +121,7 @@ def git_release_get_asset_url(release, asset_name):
         log.warning("Couldn't get asset url for '%s'" % asset_name)
         return
 
-    matching_assets = list(filter(lambda f: f.get('name') == asset_name, assets))
+    matching_assets = list(filter(lambda f: re.match(asset_name, f.get('name')) is not None, assets))
     if not any(matching_assets):
         log.warning("There are no assets of name '%s'" % asset_name)
         return
@@ -220,6 +221,17 @@ def read_url(url):
     return output
 
 
+def unzip_file(source, destination, members=None, password=None):
+    with zipfile.ZipFile(str(source), 'r') as _zip:
+        log.debug("Unzipping '%s' to '%s'" % (source, destination))
+        _zip.extractall(str(destination), members=members, pwd=password)
+
+
+def is_filename_archive(filename):
+    archive_exts = ('.zip', '.7z', '.rar')
+    return any([ext for ext in archive_exts if ext in filename])
+
+
 class UpdateChecker(object):
     def __init__(self):
         self._config = None
@@ -235,7 +247,36 @@ class UpdateChecker(object):
             self.process_entry(entry)
 
     @staticmethod
-    def process_entry(entry):
+    def process_archive(entry):
+        url = entry['url']
+        url_file = url_to_filename(url)
+
+        target = entry['target']
+        target = Path(target)
+        if target.is_dir():
+            target = target / url_file
+
+        kill_if_locked = entry.get('kill_if_locked')
+        unzip_target = entry.get('unzip_target')
+        archive_password = entry.get('archive_password')
+        if is_filename_archive(target.name) and unzip_target is not None:
+            try:
+                unzip_file(target, unzip_target, password=archive_password)
+            except Exception as e:
+                log.warning("Couldn't unzip archive to '%s': %s %s" % (unzip_target, type(e), e))
+
+                proc_running = process_running(exe_path=kill_if_locked)
+                if proc_running is True:
+                    kill_process(exe_path=kill_if_locked)
+
+                try:
+                    unzip_file(target, unzip_target, password=archive_password)
+                except Exception as e:
+                    log.warning("Couldn't unzip archive to '%s' after unlocking: %s %s. Breaking" %
+                                (unzip_target, type(e), e))
+                    return
+
+    def process_entry(self, entry):
         log.debug("Processing entry:\n%s" % pprint.pformat(entry))
         url = entry['url']
         git_asset = entry.get('git_asset')
@@ -262,7 +303,9 @@ class UpdateChecker(object):
 
         if not target.exists():
             log.debug("Target '%s' doesn't exist. Just downloading url" % target)
-            return download_file_from_url(url, target)
+            download_file_from_url(url, target)
+            self.process_archive(entry)
+            return
 
         target_md5 = md5sum(target)
         url_md5 = entry.get('md5')
@@ -309,6 +352,8 @@ class UpdateChecker(object):
             shutil.move(str(temp_file), str(target))
         else:
             download_file_from_url(url, target)
+
+        self.process_archive(entry)
 
         if killed is True:
             relaunch = entry.get('relaunch', False)

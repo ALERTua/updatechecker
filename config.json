@@ -1,4 +1,13 @@
 {
+  "d912pxy": {
+    "url": "https://github.com/megai2/d912pxy",
+    "target": "G:\\Games\\GW2\\_tools\\d912pxy.zip",
+    "git_asset": "d912pxy.*?\\.zip",
+    "unzip_target": "G:\\Games\\GW2",
+    "archive_password": null,
+    "kill_if_locked": "G:\\Games\\GW2\\Gw2-64.exe",
+    "relaunch": false
+  },
   "gw2_launch_buddy": {
     "url": "https://github.com/TheCheatsrichter/Gw2_Launchbuddy",
     "target": "G:\\Games\\GW2\\_tools",
