@@ -201,7 +201,8 @@ def download_file_from_url(source, destination):
 def url_to_filename(url):
     parse = urlparse(url)
     base = os.path.basename(parse.path)
-    if '.' not in base:
+    suffix = Path(base).suffix
+    if suffix == '':
         log.warning("Cannot get filename from url '%s'. No dot in base '%s'" % (url, parse.path))
         return None
     return base

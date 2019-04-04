@@ -1,4 +1,10 @@
 {
+  "AugTyr": {
+    "url": "https://github.com/ideka/AugTyr",
+    "target": "G:\\Games\\GW2\\_tools\\AugTyr.zip",
+    "git_asset": "AugTyr.*?\\.zip",
+    "unzip_target": "G:\\Games\\GW2\\_tools"
+  },
   "d912pxy": {
     "url": "https://github.com/megai2/d912pxy",
     "target": "G:\\Games\\GW2\\_tools\\d912pxy.zip",
