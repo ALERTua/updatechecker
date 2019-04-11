@@ -1,4 +1,11 @@
 {
+  "bandcamp_downloader": {
+    "url": "https://github.com/Otiel/BandcampDownloader",
+    "target": "D:\\GDrive\\Settings\\BandcampDownloader.zip",
+    "git_asset": "BandcampDownloader.zip",
+    "unzip_target": "D:\\GDrive\\Settings\\BandcampDownloader",
+    "archive_password": null
+  },
   "AugTyr": {
     "url": "https://github.com/ideka/AugTyr",
     "target": "G:\\Games\\GW2\\_tools\\AugTyr.zip",
