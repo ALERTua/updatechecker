@@ -2,8 +2,7 @@
   "linkshellextension": {
     "url": "http://schinagl.priv.at/nt/hardlinkshellext/HardLinkShellExt_X64.exe",
     "target": "D:\\Progs\\HardLinkShellExt_X64.exe",
-    "launch": true,
-    "launch_what": "D:\\Progs\\HardLinkShellExt_X64.exe",
+    "launch": "D:\\Progs\\HardLinkShellExt_X64.exe",
     "arguments": "/S"
   },
   "bandcamp_downloader": {
@@ -32,10 +31,7 @@
     "target": "G:\\Games\\GW2\\_tools",
     "git_asset": "Gw2.Launchbuddy.exe",
     "kill_if_locked": "G:\\Games\\GW2\\_tools\\Gw2.Launchbuddy.exe",
-    "relaunch": true,
-    "launch": false,
-    "launch_what": "G:\\Games\\GW2\\_tools\\Gw2.Launchbuddy.exe",
-    "arguments": null
+    "relaunch": true
   },
   "arcdps": {
     "url": "https://www.deltaconnected.com/arcdps/x64/d3d9.dll",

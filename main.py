@@ -209,8 +209,12 @@ def url_to_filename(url):
 
 
 def load_config(path=constants.CONFIG_FILE):
+    if not Path(path).exists():
+        raise Exception("Config doesn't exist @ '%s'. Create it using config.json.example" % path)
+
     with open(path, 'r') as config_file:
         config_data = json.load(config_file)
+
     return config_data
 
 
@@ -251,15 +255,15 @@ class UpdateChecker(object):
     def process_archive(entry):
         url = entry['url']
         url_file = url_to_filename(url)
-
+        kill_if_locked = entry.get('kill_if_locked')
+        unzip_target = entry.get('unzip_target')
+        archive_password = entry.get('archive_password')
         target = entry['target']
+
         target = Path(target)
         if target.is_dir():
             target = target / url_file
 
-        kill_if_locked = entry.get('kill_if_locked')
-        unzip_target = entry.get('unzip_target')
-        archive_password = entry.get('archive_password')
         if is_filename_archive(target.name) and unzip_target is not None:
             try:
                 unzip_file(target, unzip_target, password=archive_password)
@@ -281,17 +285,15 @@ class UpdateChecker(object):
         log.debug("Processing entry:\n%s" % pprint.pformat(entry))
         url = entry['url']
         url_md5 = entry.get('md5')
-
         git_asset = entry.get('git_asset')
-        launch = entry.get('launch', False)
+        launch = entry.get('launch')
         arguments = entry.get('arguments')
-        launch_what = entry.get('launch_what')
         kill_if_locked = entry.get('kill_if_locked')
         relaunch = entry.get('relaunch', False)
 
         def _launch():
-            if launch_what is not None:
-                __cmd = 'start "" %s %s' % (launch_what, arguments or '')
+            if launch is not None:
+                __cmd = 'start "" %s %s' % (launch, arguments or '')
                 log.debug("Launching '%s'" % __cmd)
                 os.system(__cmd)
 
@@ -377,7 +379,7 @@ class UpdateChecker(object):
             if relaunch is True and kill_if_locked is not None:
                 _cmd = "%s %s" % (kill_if_locked, arguments or '')
                 os.system(kill_if_locked)
-        elif launch is True:
+        else:
             _launch()
 
 

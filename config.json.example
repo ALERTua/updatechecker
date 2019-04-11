@@ -1,0 +1,33 @@
+{
+  "entry title": {  # remove this entry from your config
+    "url": "https://github.com/username/repo",  # file uri or git repo uri
+    "git_asset": "",  # a regexp pattern to get the git release file if the url is a github repo
+    "md5": "https://www.md5.file/uri",  # uri that contains an md5 hash for the downloaded file
+    "target": "c:\\downloads\\file.zip",  # full file directory path or full file path to download the file to
+    "unzip_target": "c:\\folder",  # if the file is an archive - unzip it to target
+    "archive_password": "archive password",
+    "kill_if_locked": "c:\\path\file.exe",  # kill this process full path or name, if the target is locked while downloading or unzipping
+    "relaunch": true,  # Relaunch the kill_if_locked path. default: false
+    "launch": "C:\\path\\file.exe",  # launch this file after download
+    "arguments": ""  # launch the launch with these arguments
+  },  # these next entries are real
+  "d912pxy": {
+    "url": "https://github.com/megai2/d912pxy",
+    "git_asset": "d912pxy.*?\\.zip",
+    "target": "G:\\Games\\GW2\\_tools\\d912pxy.zip",
+    "unzip_target": "G:\\Games\\GW2",
+    "archive_password": null,
+    "kill_if_locked": "G:\\Games\\GW2\\Gw2-64.exe",
+    "relaunch": false
+  },
+  "linkshellextension": {
+     "url": "http://schinagl.priv.at/nt/hardlinkshellext/HardLinkShellExt_X64.exe",
+     "target": "D:\\Progs\\HardLinkShellExt_X64.exe",
+     "launch": "D:\\Progs\\HardLinkShellExt_X64.exe",
+     "arguments": "/S"
+  },
+  "arcdps_extras": {
+    "url": "https://www.deltaconnected.com/arcdps/x64/extras/d3d9_arcdps_extras.dll",
+    "target": "G:\\Games\\GW2\\bin64"
+  }
+}
