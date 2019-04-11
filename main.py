@@ -280,7 +280,21 @@ class UpdateChecker(object):
     def process_entry(self, entry):
         log.debug("Processing entry:\n%s" % pprint.pformat(entry))
         url = entry['url']
+        url_md5 = entry.get('md5')
+
         git_asset = entry.get('git_asset')
+        launch = entry.get('launch', False)
+        arguments = entry.get('arguments')
+        launch_what = entry.get('launch_what')
+        kill_if_locked = entry.get('kill_if_locked')
+        relaunch = entry.get('relaunch', False)
+
+        def _launch():
+            if launch_what is not None:
+                __cmd = 'start "" %s %s' % (launch_what, arguments or '')
+                log.debug("Launching '%s'" % __cmd)
+                os.system(__cmd)
+
         if git_asset is not None:
             log.debug("Trying git package for git asset '%s'" % git_asset)
             git_package = url_get_git_package(url)
@@ -306,13 +320,17 @@ class UpdateChecker(object):
             log.debug("Target '%s' doesn't exist. Just downloading url" % target)
             download_file_from_url(url, target)
             self.process_archive(entry)
+            _launch()
             return
 
         target_md5 = md5sum(target)
-        url_md5 = entry.get('md5')
         temp_file = constants.TEMP_FOLDER / url_file
-        if temp_file.exists():
-            temp_file.unlink()
+
+        def del_temp():
+            if temp_file.exists():
+                temp_file.unlink()
+
+        del_temp()
 
         if url_md5 is None:
             download_file_from_url(url, temp_file)
@@ -323,6 +341,7 @@ class UpdateChecker(object):
 
         if target_md5 == url_md5:
             log.info("No need to update '%s'" % target)
+            del_temp()
             return
         else:
             log.debug("md5 url vs target: '%s' '%s'" % (url_md5, target_md5))
@@ -333,9 +352,6 @@ class UpdateChecker(object):
             bak_file.unlink()
 
         killed = False
-        kill_if_locked = entry.get('kill_if_locked')
-        launch = entry.get('launch', False)
-        arguments = entry.get('arguments')
         try:
             target.rename(bak_file)
         except Exception as e:
@@ -351,21 +367,18 @@ class UpdateChecker(object):
         if temp_file.exists():
             log.debug("Moving '%s' to '%s'" % (temp_file, target))
             shutil.move(str(temp_file), str(target))
+            del_temp()
         else:
             download_file_from_url(url, target)
 
         self.process_archive(entry)
 
         if killed is True:
-            relaunch = entry.get('relaunch', False)
             if relaunch is True and kill_if_locked is not None:
                 _cmd = "%s %s" % (kill_if_locked, arguments or '')
                 os.system(kill_if_locked)
         elif launch is True:
-            launch_what = entry.get('launch_what')
-            if launch_what is not None:
-                _cmd = "%s %s" % (launch_what, arguments or '')
-                os.system(launch_what)
+            _launch()
 
 
 def main():

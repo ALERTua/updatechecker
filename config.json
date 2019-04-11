@@ -1,10 +1,16 @@
 {
+  "linkshellextension": {
+    "url": "http://schinagl.priv.at/nt/hardlinkshellext/HardLinkShellExt_X64.exe",
+    "target": "D:\\Progs\\HardLinkShellExt_X64.exe",
+    "launch": true,
+    "launch_what": "D:\\Progs\\HardLinkShellExt_X64.exe",
+    "arguments": "/S"
+  },
   "bandcamp_downloader": {
     "url": "https://github.com/Otiel/BandcampDownloader",
     "target": "D:\\GDrive\\Settings\\BandcampDownloader.zip",
     "git_asset": "BandcampDownloader.zip",
-    "unzip_target": "D:\\GDrive\\Settings\\BandcampDownloader",
-    "archive_password": null
+    "unzip_target": "D:\\GDrive\\Settings\\BandcampDownloader"
   },
   "AugTyr": {
     "url": "https://github.com/ideka/AugTyr",
