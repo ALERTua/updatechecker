@@ -238,13 +238,13 @@ def is_filename_archive(filename):
 
 
 class UpdateChecker(object):
-    def __init__(self):
-        self._config = None
+    def __init__(self, config_path=None):
+        self._config = config_path
 
     @property
     def config(self) -> dict:
         if self._config is None:
-            self._config = load_config()
+            self._config = load_config(self._config)
         return self._config
 
     def main(self):
@@ -383,8 +383,11 @@ class UpdateChecker(object):
             _launch()
 
 
-def main():
-    update_checker = UpdateChecker()
+def main(args=None):
+    _args = args or sys.argv[1:]
+    config = None if not len(_args) else _args[0]
+
+    update_checker = UpdateChecker(config)
     update_checker.main()
 
 
