@@ -208,7 +208,8 @@ def url_to_filename(url):
     return base
 
 
-def load_config(path=constants.CONFIG_FILE):
+def load_config(path=None):
+    path = path or constants.CONFIG_FILE
     if not Path(path).exists():
         raise Exception("Config doesn't exist @ '%s'. Create it using config.json.example" % path)
 
