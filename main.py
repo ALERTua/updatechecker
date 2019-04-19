@@ -255,17 +255,17 @@ class UpdateChecker(object):
     @staticmethod
     def process_archive(entry):
         url = entry['url']
-        url_file = url_to_filename(url)
         kill_if_locked = entry.get('kill_if_locked')
         unzip_target = entry.get('unzip_target')
         archive_password = entry.get('archive_password')
         target = entry['target']
 
-        target = Path(target)
-        if target.is_dir():
-            target = target / url_file
-
         if is_filename_archive(target.name) and unzip_target is not None:
+            target = Path(target)
+            if target.is_dir():
+                url_file = url_to_filename(url)
+                target = target / url_file
+
             try:
                 unzip_file(target, unzip_target, password=archive_password)
             except Exception as e:
