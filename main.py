@@ -174,6 +174,10 @@ def md5sum(path):
 
         path = downloaded_file
 
+    if not path.exists():
+        log.warning("Cannot get md5sum: md5 file doesn't exist")
+        return None
+
     log.debug("Getting md5 of '%s'" % path)
     with path.open('rb') as f:
         d = hashlib.md5()
