@@ -22,6 +22,7 @@
   },
   "linkshellextension": {
      "url": "http://schinagl.priv.at/nt/hardlinkshellext/HardLinkShellExt_X64.exe",
+     "url2": "http://schinagl.reserve.at/nt/hardlinkshellext/HardLinkShellExt_X64.exe",  # mirror uri
      "target": "D:\\Progs\\HardLinkShellExt_X64.exe",
      "launch": "D:\\Progs\\HardLinkShellExt_X64.exe",
      "arguments": "/S"

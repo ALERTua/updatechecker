@@ -190,15 +190,15 @@ def md5sum(path):
 def download_file_from_url(source, destination):
     def basic_progress(blocknum, bs, size):
         if blocknum % 10 == 0:
-            log.printer('.', end='')
+            log.printer('.', end='', color=False)
 
-    log.printer("Downloading '%s' to '%s'" % (source, destination), end='')
+    log.printer("Downloading '%s' to '%s'" % (source, destination), end='', color=False)
     try:
         urlretrieve(source, str(destination), basic_progress)
     except Exception as e:
-        log.error("Error downloading '%s' to '%s': %s %s" % (source, destination, type(e), e))
+        log.error("Error downloading '%s' to '%s'\n%s %s" % (source, destination, type(e), e))
         return None
-    log.printer('Done')
+    log.printer('Done', color=False)
     return Path(destination)
 
 
@@ -289,6 +289,7 @@ class UpdateChecker(object):
     def process_entry(self, entry):
         log.debug("Processing entry:\n%s" % pprint.pformat(entry))
         url = entry['url']
+        url2 = entry.get('url2') or url
         url_md5 = entry.get('md5')
         git_asset = entry.get('git_asset')
         launch = entry.get('launch')
@@ -325,7 +326,7 @@ class UpdateChecker(object):
 
         if not target.exists():
             log.debug("Target '%s' doesn't exist. Just downloading url" % target)
-            download_file_from_url(url, target)
+            download_file_from_url(url, target) or download_file_from_url(url2, target)
             self.process_archive(entry)
             _launch()
             return
@@ -340,18 +341,19 @@ class UpdateChecker(object):
         del_temp()
 
         if url_md5 is None:
-            download_file_from_url(url, temp_file)
+            download_file_from_url(url, temp_file) or download_file_from_url(url2, temp_file)
             url_md5 = md5sum(temp_file)
         else:
             url_md5 = read_url(url_md5)
             url_md5 = url_md5.split(' ')[0]
 
         if target_md5 == url_md5:
-            log.info("No need to update '%s'" % target)
+            log.printer("No need to update '%s'" % target, color=False)
             del_temp()
             return
-        else:
-            log.debug("md5 url vs target: '%s' '%s'" % (url_md5, target_md5))
+
+        log.debug("md5 url vs target: '%s' '%s'" % (url_md5, target_md5))
+        log.printer("Updating %s" % target)
 
         bak_file = Path('%s.bak' % str(target))
         if bak_file.exists():
@@ -376,7 +378,7 @@ class UpdateChecker(object):
             shutil.move(str(temp_file), str(target))
             del_temp()
         else:
-            download_file_from_url(url, target)
+            download_file_from_url(url, target) or download_file_from_url(url2, target)
 
         self.process_archive(entry)
 
