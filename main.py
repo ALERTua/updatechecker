@@ -1,3 +1,4 @@
+import collections
 import hashlib
 import json
 import locale
@@ -9,6 +10,7 @@ import sys
 import urllib.request
 import zipfile
 from functools import partial
+from multiprocessing.pool import Pool
 from pathlib import Path
 
 # noinspection PyPackageRequirements
@@ -242,160 +244,165 @@ def is_filename_archive(filename):
     return any([ext for ext in archive_exts if ext in filename])
 
 
-class UpdateChecker(object):
-    def __init__(self, config_path=None):
-        self._config = config_path
+def process_entry(entry):
+    log.debug("Processing entry:\n%s" % pprint.pformat(entry))
+    url = entry['url']
+    url2 = entry.get('url2') or url
+    url_md5 = entry.get('md5')
+    git_asset = entry.get('git_asset')
+    launch = entry.get('launch')
+    arguments = entry.get('arguments')
+    kill_if_locked = entry.get('kill_if_locked')
+    relaunch = entry.get('relaunch', False)
 
-    @property
-    def config(self) -> dict:
-        if self._config is None:
-            self._config = load_config(self._config)
-        return self._config
+    def _launch():
+        if launch is not None:
+            __cmd = 'start "" %s %s' % (launch, arguments or '')
+            log.debug("Launching '%s'" % __cmd)
+            os.system(__cmd)
 
-    def main(self):
-        for _, entry in self.config.items():
-            self.process_entry(entry)
-
-    @staticmethod
-    def process_archive(entry):
-        url = entry['url']
-        kill_if_locked = entry.get('kill_if_locked')
-        unzip_target = entry.get('unzip_target')
-        archive_password = entry.get('archive_password')
-        target = entry['target']
-        target = Path(target)
-
-        if is_filename_archive(target.name) and unzip_target is not None:
-            if target.is_dir():
-                url_file = url_to_filename(url)
-                target = target / url_file
-
-            try:
-                unzip_file(target, unzip_target, password=archive_password)
-            except Exception as e:
-                log.warning("Couldn't unzip archive to '%s': %s %s" % (unzip_target, type(e), e))
-
-                proc_running = process_running(exe_path=kill_if_locked)
-                if proc_running is True:
-                    kill_process(exe_path=kill_if_locked)
-
-                try:
-                    unzip_file(target, unzip_target, password=archive_password)
-                except Exception as e:
-                    log.warning("Couldn't unzip archive to '%s' after unlocking: %s %s. Breaking" %
-                                (unzip_target, type(e), e))
-                    return
-
-    def process_entry(self, entry):
-        log.debug("Processing entry:\n%s" % pprint.pformat(entry))
-        url = entry['url']
-        url2 = entry.get('url2') or url
-        url_md5 = entry.get('md5')
-        git_asset = entry.get('git_asset')
-        launch = entry.get('launch')
-        arguments = entry.get('arguments')
-        kill_if_locked = entry.get('kill_if_locked')
-        relaunch = entry.get('relaunch', False)
-
-        def _launch():
-            if launch is not None:
-                __cmd = 'start "" %s %s' % (launch, arguments or '')
-                log.debug("Launching '%s'" % __cmd)
-                os.system(__cmd)
-
-        if git_asset is not None:
-            log.debug("Trying git package for git asset '%s'" % git_asset)
-            git_package = url_get_git_package(url)
-            if git_package is None:
-                log.warning("Url is not for a file and not a git package. Cannot proceed")
-                return
-
-            releases = git_package_to_releases(git_package)
-            release = git_latest_release(releases)
-            url = git_release_get_asset_url(release, git_asset)
-
-        url_file = url_to_filename(url)
-        if url_file is None:
-            log.warning("Url '%s' is not for a file." % url)
+    if git_asset is not None:
+        log.debug("Trying git package for git asset '%s'" % git_asset)
+        git_package = url_get_git_package(url)
+        if git_package is None:
+            log.warning("Url is not for a file and not a git package. Cannot proceed")
             return
 
-        target = entry['target']
-        target = Path(target)
+        releases = git_package_to_releases(git_package)
+        release = git_latest_release(releases)
+        url = git_release_get_asset_url(release, git_asset)
+
+    url_file = url_to_filename(url)
+    if url_file is None:
+        log.warning("Url '%s' is not for a file." % url)
+        return
+
+    target = entry['target']
+    target = Path(target)
+    if target.is_dir():
+        target = target / url_file
+
+    if not target.exists():
+        log.debug("Target '%s' doesn't exist. Just downloading url" % target)
+        download_file_from_url(url, target) or download_file_from_url(url2, target)
+        process_archive(entry)
+        _launch()
+        return
+
+    target_md5 = md5sum(target)
+    temp_file = constants.TEMP_FOLDER / url_file
+
+    def del_temp():
+        if temp_file.exists():
+            temp_file.unlink()
+
+    del_temp()
+
+    if url_md5 is None:
+        download_file_from_url(url, temp_file) or download_file_from_url(url2, temp_file)
+        url_md5 = md5sum(temp_file)
+    else:
+        url_md5 = read_url(url_md5)
+        url_md5 = url_md5.split(' ')[0]
+
+    if target_md5 == url_md5:
+        log.printer("No need to update '%s'" % target, color=False)
+        del_temp()
+        return
+
+    log.debug("md5 url vs target: '%s' '%s'" % (url_md5, target_md5))
+    log.printer("Updating %s" % target)
+
+    bak_file = Path('%s.bak' % str(target))
+    if bak_file.exists():
+        log.debug("Deleting old backup for '%s'" % target)
+        bak_file.unlink()
+
+    killed = False
+    try:
+        target.rename(bak_file)
+    except Exception as e:
+        if kill_if_locked is None:
+            log.warning("Couldn't back up '%s': %s %s" % (target, type(e), e))
+            return
+
+        proc_running = process_running(exe_path=kill_if_locked)
+        if proc_running is True:
+            kill_process(exe_path=kill_if_locked)
+            killed = True
+
+    if temp_file.exists():
+        log.debug("Moving '%s' to '%s'" % (temp_file, target))
+        shutil.move(str(temp_file), str(target))
+        del_temp()
+    else:
+        download_file_from_url(url, target) or download_file_from_url(url2, target)
+
+    process_archive(entry)
+
+    if killed is True:
+        if relaunch is True and kill_if_locked is not None:
+            _cmd = "%s %s" % (kill_if_locked, arguments or '')
+            os.system(kill_if_locked)
+    else:
+        _launch()
+
+
+def process_archive(entry):
+    url = entry['url']
+    kill_if_locked = entry.get('kill_if_locked')
+    unzip_target = entry.get('unzip_target')
+    archive_password = entry.get('archive_password')
+    target = entry['target']
+    target = Path(target)
+
+    if is_filename_archive(target.name) and unzip_target is not None:
         if target.is_dir():
+            url_file = url_to_filename(url)
             target = target / url_file
 
-        if not target.exists():
-            log.debug("Target '%s' doesn't exist. Just downloading url" % target)
-            download_file_from_url(url, target) or download_file_from_url(url2, target)
-            self.process_archive(entry)
-            _launch()
-            return
-
-        target_md5 = md5sum(target)
-        temp_file = constants.TEMP_FOLDER / url_file
-
-        def del_temp():
-            if temp_file.exists():
-                temp_file.unlink()
-
-        del_temp()
-
-        if url_md5 is None:
-            download_file_from_url(url, temp_file) or download_file_from_url(url2, temp_file)
-            url_md5 = md5sum(temp_file)
-        else:
-            url_md5 = read_url(url_md5)
-            url_md5 = url_md5.split(' ')[0]
-
-        if target_md5 == url_md5:
-            log.printer("No need to update '%s'" % target, color=False)
-            del_temp()
-            return
-
-        log.debug("md5 url vs target: '%s' '%s'" % (url_md5, target_md5))
-        log.printer("Updating %s" % target)
-
-        bak_file = Path('%s.bak' % str(target))
-        if bak_file.exists():
-            log.debug("Deleting old backup for '%s'" % target)
-            bak_file.unlink()
-
-        killed = False
         try:
-            target.rename(bak_file)
+            unzip_file(target, unzip_target, password=archive_password)
         except Exception as e:
-            if kill_if_locked is None:
-                log.warning("Couldn't back up '%s': %s %s" % (target, type(e), e))
-                return
+            log.warning("Couldn't unzip archive to '%s': %s %s" % (unzip_target, type(e), e))
 
             proc_running = process_running(exe_path=kill_if_locked)
             if proc_running is True:
                 kill_process(exe_path=kill_if_locked)
-                killed = True
 
-        if temp_file.exists():
-            log.debug("Moving '%s' to '%s'" % (temp_file, target))
-            shutil.move(str(temp_file), str(target))
-            del_temp()
-        else:
-            download_file_from_url(url, target) or download_file_from_url(url2, target)
-
-        self.process_archive(entry)
-
-        if killed is True:
-            if relaunch is True and kill_if_locked is not None:
-                _cmd = "%s %s" % (kill_if_locked, arguments or '')
-                os.system(kill_if_locked)
-        else:
-            _launch()
+            try:
+                unzip_file(target, unzip_target, password=archive_password)
+            except Exception as e:
+                log.warning("Couldn't unzip archive to '%s' after unlocking: %s %s. Breaking" %
+                            (unzip_target, type(e), e))
+                return
 
 
-def main(args=None):
+def async_(func, args, threads=None):
+    # type: (callable, collections.Iterable, int or None) -> None
+    threads = threads or psutil.cpu_count() - 1
+    pool = Pool(processes=threads)  # Create a multiprocessing Pool
+    pool.map(func, args)
+    pool.close()
+    pool.join()
+
+
+def process_entry_async(args):
+    entry = args[0]
+    return process_entry(entry)
+
+
+def main(args=None, _async=False):
     _args = args or sys.argv[1:]
     config = None if not len(_args) else _args[0]
+    _config = load_config(config)
 
-    update_checker = UpdateChecker(config)
-    update_checker.main()
+    if _async:
+        _async_args = list(_config.values())
+        async_(process_entry_async, _async_args)
+    else:
+        for _, entry in _config.items():
+            process_entry(entry)
 
 
 if __name__ == '__main__':
