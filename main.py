@@ -9,8 +9,9 @@ import shutil
 import sys
 import urllib.request
 import zipfile
+from concurrent.futures.thread import ThreadPoolExecutor
 from functools import partial
-from multiprocessing.pool import Pool
+from multiprocessing import Pool
 from pathlib import Path
 
 # noinspection PyPackageRequirements
@@ -378,28 +379,16 @@ def process_archive(entry):
                 return
 
 
-def async_(func, args, threads=None):
-    # type: (callable, collections.Iterable, int or None) -> None
-    threads = threads or psutil.cpu_count() - 1
-    pool = Pool(processes=threads)  # Create a multiprocessing Pool
-    pool.map(func, args)
-    pool.close()
-    pool.join()
-
-
-def process_entry_async(args):
-    entry = args[0]
-    return process_entry(entry)
-
-
-def main(args=None, _async=False):
+def main(args=None, _async=True, threads=None):
     _args = args or sys.argv[1:]
     config = None if not len(_args) else _args[0]
     _config = load_config(config)
 
     if _async:
-        _async_args = list(_config.values())
-        async_(process_entry_async, _async_args)
+        _async_args = [c for c in _config.values()]
+        threads = threads or psutil.cpu_count() - 1
+        with ThreadPoolExecutor(max_workers=threads) as executor:
+            executor.map(process_entry, _async_args)
     else:
         for _, entry in _config.items():
             process_entry(entry)
