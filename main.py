@@ -340,6 +340,8 @@ def process_entry(entry):
         download_file_from_url(url, target) or download_file_from_url(url2, target)
 
     process_archive(entry)
+    if not target.exists() and bak_file.exists():
+        bak_file.rename(target)
 
     if killed is True:
         if relaunch is True and kill_if_locked is not None:
