@@ -125,7 +125,7 @@ def git_release_get_asset_url(release, asset_name):
 
     matching_assets = list(filter(lambda f: re.match(asset_name, f.get('name')) is not None, assets))
     if not any(matching_assets):
-        log.warning(f"There are no assets of name '{asset_name}'")
+        log.warning(f"There are no assets of name '{asset_name}' @ '{release.get('url')}")
         return
 
     asset = matching_assets[0]
@@ -280,6 +280,7 @@ def process_entry(entry):
     target = Path(target)
     if target.is_dir():
         target = target / url_file
+    entry['target'] = target
 
     if not target.exists():
         log.debug(f"Target '{target}' doesn't exist. Just downloading url")
@@ -359,10 +360,6 @@ def process_archive(entry):
     target = Path(target)
 
     if is_filename_archive(target.name) and unzip_target is not None:
-        if target.is_dir():
-            url_file = url_to_filename(url)
-            target = target / url_file
-
         try:
             unzip_file(target, unzip_target, password=archive_password)
         except Exception as e:
