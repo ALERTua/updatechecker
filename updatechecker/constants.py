@@ -1,7 +1,7 @@
 # noinspection PyCompatibility
 from pathlib import Path
 
-ROOT_FOLDER = Path(__file__).parent.absolute()
+ROOT_FOLDER = Path(__file__).parent.parent.absolute()
 TEMP_FOLDER = ROOT_FOLDER / 'temp/'
 if not TEMP_FOLDER.exists():
     TEMP_FOLDER.mkdir()
@@ -16,4 +16,4 @@ HASHES_FILE = ROOT_FOLDER / 'hashes.json'
 LOGGER_MESSAGE_FORMAT = '%(asctime)s.%(msecs)03d %(lineno)3s:%(name)-22s %(levelname)-6s %(message)s'
 LOGGER_COLORED_MESSAGE_FORMAT = '%(log_color)s%(message)s'
 LOGGER_DATE_FORMAT = '%H:%M:%S'
-MAX_LOG_FILES = 50
+MAX_LOG_FILES = 10

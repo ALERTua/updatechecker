@@ -1,5 +1,13 @@
 
 @echo off
-set PYTHONIOENCODING=UTF-8
 pushd %~dp0
-venv.cmd %~dp0__main__.py %*
+for %%I in (.) do set curdir=%%~nxI
+
+where uv >nul || (echo no uv. exiting & exit /b 1)
+
+uv run -m %curdir%
+
+set output=%ERRORLEVEL%
+
+echo Exiting %output%
+exit /b %output%

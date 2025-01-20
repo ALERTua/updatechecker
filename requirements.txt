@@ -1,5 +1,0 @@
-colorlog
-colorama
-future
-psutil
-requests

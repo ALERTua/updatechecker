@@ -1,14 +1,5 @@
-#!/usr/bin/env python2
-# -*- coding: utf-8 -*-
-# The above encoding declaration is required and the file must be saved as UTF-8
-from __future__ import absolute_import
-from __future__ import unicode_literals
-from __future__ import print_function
-
 from colorama import Fore
 from colorlog import ColoredFormatter, default_log_colors
-# noinspection PyCompatibility
-from past.builtins import basestring
 
 import datetime
 import logging
@@ -20,7 +11,7 @@ import time
 # noinspection PyCompatibility
 from pathlib import Path
 
-import constants
+from updatechecker import constants
 
 
 class InfoFilter(logging.Filter):
@@ -33,7 +24,7 @@ class PrettyLog:
         self.obj = obj
 
     def __repr__(self):
-        if isinstance(self.obj, basestring):
+        if isinstance(self.obj, str):
             return self.obj
 
         return pprint.pformat(self.obj)
