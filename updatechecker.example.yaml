@@ -10,7 +10,7 @@ entries:
     kill_if_locked: 'C:\windows\explorer.exe'  # kill this process full path or name, if the target is locked while downloading or unzipping
     relaunch: true  # Relaunch the kill_if_locked path. default: false
     launch: 'C:\windows\explorer.exe'  # launch this file after download
-    arguments: ""  # launch the launch with these arguments
+    arguments: ''  # launch the launch with these arguments
 
   d912pxy:
     url: "https://github.com/megai2/d912pxy"
