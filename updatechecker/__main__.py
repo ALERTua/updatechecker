@@ -13,7 +13,7 @@ log = Log.getLogger(__name__)
 
 def process_entry(entry):
     log.printer(f"Processing entry '{entry.name}'")
-    log.debug(f"{pprint.pformat(entry.dict())}")
+    log.debug(f"{pprint.pformat(entry.model_dump())}")
     url = entry.url
     url_md5 = entry.md5
     git_asset = entry.git_asset
