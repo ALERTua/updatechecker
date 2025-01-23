@@ -46,7 +46,7 @@ def process_entry(entry):
     target = entry.target
     target = Path(target)
     if target.is_dir():
-        target = target / url_file
+        entry.target = target = target / url_file
 
     if not target.exists():
         log.debug(f"Target '{target}' doesn't exist. Just downloading url")
