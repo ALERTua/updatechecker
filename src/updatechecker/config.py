@@ -297,7 +297,7 @@ validators = [
     Validator("variables", is_type_of=dict, default={}),
 ]
 config_kwargs = dict(
-    # env='updatechecker',
+    env='updatechecker',
     load_dotenv=False,
     apply_default_on_none=True,
     auto_cast=True,
@@ -315,7 +315,6 @@ config_kwargs = dict(
     validators=validators,
 )
 config = Dynaconf(
-    env='updatechecker',
     root_path=default_config_dir,
     settings_files=[
         default_config_filepath,
