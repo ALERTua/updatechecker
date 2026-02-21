@@ -6,7 +6,7 @@ This ensures tests work in CI environments where home directory access
 may be limited or different.
 """
 
-import sys
+import os
 from pathlib import Path
 
 import pytest
@@ -15,37 +15,32 @@ import pytest
 _example_yaml_path = Path(__file__).parent.parent / "updatechecker.example.yaml"
 
 
-@pytest.fixture(autouse=True)
-def configure_test_config(monkeypatch):
+@pytest.fixture(autouse=True, scope="session")
+def configure_test_config():
     """Configure the application to use updatechecker.example.yaml for tests.
 
-    This fixture automatically runs for every test and:
-    1. Overrides USERPROFILE to point to the test directory
-    2. Makes the config look for updatechecker.example.yaml
-    3. Sets up any other environment variables needed for tests
+    This fixture runs once per test session and sets environment variables
+    to point the config to updatechecker.example.yaml.
     """
-    # Point to the example yaml file
-    test_config_file = str(_example_yaml_path)
-
     # Ensure the example file exists
     if not _example_yaml_path.exists():
         pytest.skip(f"Example config file not found: {_example_yaml_path}")
 
-    # Patch the config module's settings_files to use example yaml
-    # We need to do this before importing the config
-    import importlib
+    # Set environment variables to point to example yaml
+    # The config looks for updatechecker.yaml in the config directory
+    test_config_dir = str(Path(_example_yaml_path).parent)
 
-    # Reload the config module to pick up new settings
-    if "updatechecker.config" in sys.modules:
-        config_module = sys.modules["updatechecker.config"]
+    # Override USERPROFILE to point to the test directory
+    # This makes the config look for updatechecker.yaml in the example file's directory
+    os.environ["USERPROFILE"] = test_config_dir
 
-        # Override the default config path to point to example yaml
-        # The config will look for files in order: ./updatechecker.yaml, then default
-        # We want it to find our example file
-        monkeypatch.setattr(config_module, "default_config_filepath", test_config_file)
-        monkeypatch.setattr(
-            config_module, "default_config_dir", str(Path(test_config_file).parent)
-        )
+    # Also set UPDATECHECKER_CONFIG to explicitly point to the example file
+    os.environ["UPDATECHECKER_CONFIG"] = str(_example_yaml_path)
 
-        # Force reload to apply changes
-        importlib.reload(config_module)
+    yield
+
+    # Cleanup
+    if "USERPROFILE" in os.environ:
+        del os.environ["USERPROFILE"]
+    if "UPDATECHECKER_CONFIG" in os.environ:
+        del os.environ["UPDATECHECKER_CONFIG"]
