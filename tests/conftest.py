@@ -5,7 +5,7 @@ updatechecker.example.yaml instead of creating home directory files.
 This ensures tests work in CI environments where home directory access
 may be limited or different.
 """
-import os
+
 import sys
 from pathlib import Path
 
@@ -25,7 +25,6 @@ def configure_test_config(monkeypatch):
     3. Sets up any other environment variables needed for tests
     """
     # Point to the example yaml file
-    test_config_dir = str(Path(__file__).parent)
     test_config_file = str(_example_yaml_path)
 
     # Ensure the example file exists
@@ -44,7 +43,9 @@ def configure_test_config(monkeypatch):
         # The config will look for files in order: ./updatechecker.yaml, then default
         # We want it to find our example file
         monkeypatch.setattr(config_module, "default_config_filepath", test_config_file)
-        monkeypatch.setattr(config_module, "default_config_dir", str(Path(test_config_file).parent))
+        monkeypatch.setattr(
+            config_module, "default_config_dir", str(Path(test_config_file).parent)
+        )
 
         # Force reload to apply changes
         importlib.reload(config_module)
