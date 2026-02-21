@@ -1,15 +1,17 @@
 import hashlib
+import json
 import os
 import re
 import urllib.request
 import zipfile
+from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlretrieve
 
+import httpx
 import psutil as psutil
-import requests
 
 from . import constants
 from .logger import log
@@ -88,8 +90,8 @@ def url_get_git_package(url: str) -> str | None:
     """
     if 'github' in url:
         url = re.search('(?<=github.com/)[^/]+/[^/]+', url).group(0)
-    request = requests.get(f'https://github.com/{url}/tags.atom')
-    if request.status_code != 200:
+    response = httpx.get(f'https://github.com/{url}/tags.atom', timeout=30.0)
+    if response.status_code != 200:
         log.warning(f'{url} is not a valid github url/package')
         return None
 
@@ -98,9 +100,8 @@ def url_get_git_package(url: str) -> str | None:
 
 def git_package_to_releases(package):
     releases_url = f"https://api.github.com/repos/{package}/releases"
-    output = requests.get(url=releases_url)
-    output = output.json()
-    return output
+    response = httpx.get(releases_url, timeout=30.0)
+    return response.json()
 
 
 def git_latest_release(releases):
@@ -312,3 +313,244 @@ def unzip_file(source, destination, members=None, password=None, flatten=False):
 def is_filename_archive(filename):
     archive_exts = ('.zip', '.7z', '.rar')
     return any(ext for ext in archive_exts if ext in filename)
+
+
+def get_url_headers(url: str) -> dict | None:
+    """Make HTTP HEAD request to get file metadata without downloading.
+
+    Returns a dict with:
+    - etag: ETag header value (unique file identifier)
+    - last_modified: Last-Modified header value (timestamp)
+    - content_length: Content-Length header value (file size in bytes)
+    - None if request fails or URL is not accessible
+    """
+    try:
+        request = urllib.request.Request(url, method='HEAD')
+        # Add User-Agent to avoid being blocked by some servers
+        request.add_header('User-Agent', 'updatechecker/1.0')
+
+        with urllib.request.urlopen(request, timeout=30) as response:
+            headers = response.headers
+
+            result = {
+                'etag': headers.get('ETag'),
+                'last_modified': headers.get('Last-Modified'),
+                'content_length': headers.get('Content-Length'),
+            }
+
+            # Convert content_length to int if present
+            if result['content_length']:
+                try:
+                    result['content_length'] = int(result['content_length'])
+                except (ValueError, TypeError):
+                    result['content_length'] = None
+
+            log.debug(
+                f"HEAD request for '{url}': etag={result['etag']}, "
+                f"last_modified={result['last_modified']}, "
+                f"content_length={result['content_length']}"
+            )
+
+            return result
+
+    except Exception as e:
+        log.warning(f"HEAD request failed for '{url}': {type(e).__name__} {e}")
+        return None
+
+
+def get_metadata_path(target_path: Path | str) -> Path:
+    """Get the path to the sidecar metadata file for a target file."""
+    target = Path(target_path)
+    return target.with_suffix(target.suffix + '.meta.json')
+
+
+def delete_metadata(target_path: Path | str) -> bool:
+    """Delete the sidecar metadata file for a target file.
+
+    Args:
+        target_path: Path to the downloaded file
+
+    Returns:
+        True if deleted or didn't exist, False on error
+    """
+    metadata_path = get_metadata_path(target_path)
+    if not metadata_path.exists():
+        return True
+
+    try:
+        metadata_path.unlink()
+        log.debug(f"Deleted metadata file '{metadata_path}'")
+        return True
+    except Exception as e:
+        log.warning(
+            f"Failed to delete metadata '{metadata_path}': {type(e).__name__} {e}"
+        )
+        return False
+
+
+def save_metadata(target_path: Path | str, headers: dict, url: str) -> bool:
+    """Save HTTP headers to a sidecar metadata file.
+
+    Args:
+        target_path: Path to the downloaded file
+        headers: Dict with etag, last_modified, content_length
+        url: The URL the file was downloaded from
+
+    Returns:
+        True if successful, False otherwise
+    """
+    metadata_path = get_metadata_path(target_path)
+    metadata = {
+        'url': url,
+        'etag': headers.get('etag'),
+        'last_modified': headers.get('last_modified'),
+        'content_length': headers.get('content_length'),
+        'cached_at': datetime.now(timezone.utc).isoformat(),
+    }
+
+    try:
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=2)
+        log.debug(f"Saved metadata to '{metadata_path}'")
+        return True
+    except Exception as e:
+        log.warning(
+            f"Failed to save metadata to '{metadata_path}': {type(e).__name__} {e}"
+        )
+        return False
+
+
+def load_metadata(target_path: Path | str) -> dict | None:
+    """Load cached metadata from sidecar file.
+
+    Args:
+        target_path: Path to the downloaded file
+
+    Returns:
+        Dict with cached headers or None if file doesn't exist
+    """
+    metadata_path = get_metadata_path(target_path)
+
+    if not metadata_path.exists():
+        log.debug(f"No metadata file found at '{metadata_path}'")
+        return None
+
+    try:
+        with open(metadata_path, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+
+        # Verify the URL matches (to handle redirects or URL changes)
+        return metadata
+    except json.JSONDecodeError as e:
+        log.warning(f"Corrupted metadata file '{metadata_path}': {e}")
+        return None
+    except Exception as e:
+        log.warning(
+            f"Failed to load metadata from '{metadata_path}': {type(e).__name__} {e}"
+        )
+        return None
+
+
+def file_needs_update(url: str, target_path: Path | str) -> bool | None:
+    """Check if a remote file has changed since last download.
+
+    Uses HTTP HEAD request to get current headers and compares with
+    cached metadata. Falls back to None if HEAD fails.
+
+    Args:
+        url: URL of the remote file
+        target_path: Path to the locally cached file
+
+    Returns:
+        True if file needs update, False if unchanged, None if check failed
+    """
+    target = Path(target_path)
+
+    # If target doesn't exist, definitely needs update
+    # Also clean up any stale metadata file
+    if not target.exists():
+        log.debug(f"Target '{target}' doesn't exist - needs update")
+        delete_metadata(target_path)
+        return True
+
+    # Load cached metadata
+    cached = load_metadata(target_path)
+    if cached is None:
+        log.debug("No cached metadata - needs update")
+        return True
+
+    # Verify URL matches (to handle redirects)
+    if cached.get('url') != url:
+        log.debug(f"URL changed from '{cached.get('url')}' to '{url}' - needs update")
+        return True
+
+    # Get current headers from server
+    current = get_url_headers(url)
+    if current is None:
+        log.debug("HEAD request failed - can't determine if update needed")
+        return None  # Can't determine - need to fall back to MD5
+
+    # Compare headers (priority: ETag -> Last-Modified -> Content-Length)
+
+    # 1. Check ETag (most reliable)
+    if current.get('etag') and cached.get('etag'):
+        # Handle weak ETags (they start with W/)
+        current_etag = current['etag']
+        cached_etag = cached['etag']
+
+        if current_etag != cached_etag:
+            log.debug(
+                f"ETag changed: '{cached_etag}' -> '{current_etag}' - needs update"
+            )
+            return True
+        else:
+            log.debug(f"ETag unchanged: '{current_etag}' - no update needed")
+            return False
+
+    # 2. Check Last-Modified
+    if current.get('last_modified') and cached.get('last_modified'):
+        if current['last_modified'] != cached['last_modified']:
+            log.debug(
+                f"Last-Modified changed: '{cached['last_modified']}' -> '{current['last_modified']}' - needs update"
+            )
+            return True
+        else:
+            log.debug(
+                f"Last-Modified unchanged: '{current['last_modified']}' - no update needed"
+            )
+            return False
+
+    # 3. Check Content-Length (file size)
+    if current.get('content_length') and cached.get('content_length'):
+        if current['content_length'] != cached['content_length']:
+            log.debug(
+                f"Content-Length changed: {cached['content_length']} -> {current['content_length']} - needs update"
+            )
+            return True
+        else:
+            log.debug(
+                f"Content-Length unchanged: {current['content_length']} - no update needed"
+            )
+            return False
+
+    # No headers available to compare
+    log.debug("No comparable headers found - can't determine if update needed")
+    return None
+
+
+def update_file_metadata(url: str, target_path: Path | str) -> bool:
+    """Update the cached metadata for a file after successful download.
+
+    Args:
+        url: URL the file was downloaded from
+        target_path: Path to the downloaded file
+
+    Returns:
+        True if successful, False otherwise
+    """
+    headers = get_url_headers(url)
+    if headers is None:
+        log.warning(f"Could not get headers to save metadata for '{target_path}'")
+        return False
+
+    return save_metadata(target_path, headers, url)
