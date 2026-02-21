@@ -124,7 +124,7 @@ def process_entry(entry):
             return
 
         proc_running = tools.process_running(exe_path=kill_if_locked)
-        if proc_running is True:
+        if proc_running:
             tools.kill_process(exe_path=kill_if_locked)
             killed = True
 
@@ -139,7 +139,7 @@ def process_entry(entry):
     if not target.exists() and bak_file.exists():
         bak_file.rename(target)
 
-    if killed is True:
+    if killed:
         if relaunch is True and kill_if_locked is not None:
             _cmd = f"{kill_if_locked} {arguments or ''}"
             os.system(kill_if_locked)
@@ -160,7 +160,7 @@ def process_archive(entry):
             log.warning(f"Couldn't unzip archive to '{unzip_target}': {type(e)} {e}")
 
             proc_running = tools.process_running(exe_path=kill_if_locked)
-            if proc_running is True:
+            if proc_running:
                 tools.kill_process(exe_path=kill_if_locked)
 
             try:
