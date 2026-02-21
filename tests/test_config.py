@@ -1,4 +1,5 @@
 """Tests for the config module."""
+
 from updatechecker.config import _validate_entries_with_variables
 
 

@@ -10,7 +10,6 @@ from updatechecker.config import (
     _read_yaml_variables,
     _read_yaml_entries,
     _get_variables,
-    _validate_entries_with_variables,
 )
 
 
