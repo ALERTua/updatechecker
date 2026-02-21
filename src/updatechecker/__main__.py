@@ -4,11 +4,41 @@ import shutil
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 import psutil as psutil
-from updatechecker.logger import Log
-from updatechecker import constants, common_tools as tools
-from updatechecker.config import config, Entry
+from .logger import Log
+from . import constants, common_tools as tools
+from .config import config, Entry, substitute_variables
 
 log = Log.getLogger(__name__)
+
+
+def prepare_entry(entry_dict: dict, name: str, variables: dict) -> Entry:
+    """Create an Entry with variable substitution in path fields."""
+    entry = entry_dict.copy()
+
+    # Get entry-specific variables and merge with global variables
+    # Entry-specific variables take priority over global variables
+    entry_vars = entry.pop('variables', {}) or {}
+    # First expand environment variables in entry-specific variables
+    from .config import expand_env_variables
+
+    for key, value in entry_vars.items():
+        entry_vars[key] = expand_env_variables(value)
+    # Then expand config variable references in entry-specific variables
+    # (entry vars can reference global vars)
+    for key, value in entry_vars.items():
+        entry_vars[key] = substitute_variables(value, variables)
+    # Merge: global variables first, then entry-specific override them
+    merged_variables = {**variables, **entry_vars}
+
+    # Path fields that should have variable substitution
+    path_fields = ['target', 'unzip_target', 'kill_if_locked', 'launch', 'arguments']
+
+    # Substitute variables in path fields
+    for field in path_fields:
+        if field in entry and entry[field]:
+            entry[field] = substitute_variables(entry[field], merged_variables)
+
+    return Entry(**entry, name=name)
 
 
 def process_entry(entry):
@@ -136,13 +166,20 @@ def process_archive(entry):
             try:
                 tools.unzip_file(target, unzip_target, password=archive_password)
             except Exception as e:
-                log.warning(f"Couldn't unzip archive to '{unzip_target}' after unlocking: {type(e)} {e}. Breaking")
+                log.warning(
+                    f"Couldn't unzip archive to '{unzip_target}' after unlocking: {type(e)} {e}. Breaking"
+                )
                 return
 
 
 def main(_async=True, threads=None):
-    config_entries = [Entry(**config_entry, name=config_entry_name)
-                      for config_entry_name, config_entry in config.entries.items()]
+    from .config import _get_variables
+
+    variables = _get_variables()
+    config_entries = [
+        prepare_entry(config_entry, config_entry_name, variables)
+        for config_entry_name, config_entry in config.entries.items()
+    ]
     if _async:
         threads = threads or psutil.cpu_count() - 1
         with ThreadPoolExecutor(max_workers=threads) as executor:
