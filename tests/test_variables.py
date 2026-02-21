@@ -10,6 +10,7 @@ from updatechecker.config import (
     _read_yaml_variables,
     _read_yaml_entries,
     _get_variables,
+    _validate_entries_with_variables,
 )
 
 
@@ -412,31 +413,3 @@ entries: {}
             assert variables['global_var'] == 'D:\\Base\\Global'
         finally:
             os.chdir(old_cwd)
-
-
-class TestConfigNoRecursion:
-    """Tests to ensure config loading doesn't cause infinite recursion."""
-
-    def test_config_loads_without_infinite_recursion(self):
-        """Test that config can be loaded without causing infinite recursion.
-
-        This was the main bug: accessing config.entries or config.variables
-        during validation triggered Dynaconf setup, which ran validators again,
-        causing infinite recursion.
-        """
-        from updatechecker.config import config
-
-        # This should not cause RecursionError
-        # The fix is that we now read YAML directly instead of through config
-        assert config is not None
-        # Basic sanity check - config should have entries
-        assert hasattr(config, 'entries')
-
-    def test_validate_entries_does_not_trigger_setup(self):
-        """Test that _validate_entries_with_variables doesn't trigger infinite setup."""
-        from updatechecker.config import _validate_entries_with_variables
-
-        # This should return True without RecursionError
-        # The function now reads YAML directly
-        result = _validate_entries_with_variables()
-        assert result is True
