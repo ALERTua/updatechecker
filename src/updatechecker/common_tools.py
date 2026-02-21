@@ -228,10 +228,81 @@ def read_url(url):
     return output
 
 
-def unzip_file(source, destination, members=None, password=None):
-    with zipfile.ZipFile(str(source), 'r') as _zip:
-        log.debug(f"Unzipping '{source}' to '{destination}'")
-        _zip.extractall(str(destination), members=members, pwd=password)
+def unzip_file(source, destination, members=None, password=None, flatten=False):
+    """Extract a zip file to the destination.
+
+    Args:
+        source: Path to the zip file
+        destination: Directory to extract to
+        members: Optional list of members to extract
+        password: Optional password for encrypted archives
+        flatten: If True and zip contains a single top-level directory,
+                 extract files directly to destination (skip the redundant folder)
+    """
+    if flatten:
+        # Extract to a temporary location first
+        import tempfile
+        import shutil as _shutil
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            with zipfile.ZipFile(str(source), 'r') as _zip:
+                log.debug(f"Flatten extracting '{source}' to temp '{temp_path}'")
+                _zip.extractall(str(temp_path), members=members, pwd=password)
+
+            # Find top-level directories and files
+            top_level_items = list(temp_path.iterdir())
+
+            # Check if there's exactly one top-level directory
+            top_level_dirs = [item for item in top_level_items if item.is_dir()]
+            top_level_files = [item for item in top_level_items if item.is_file()]
+
+            if len(top_level_dirs) == 1 and len(top_level_files) == 0:
+                # Single directory - flatten it
+                source_dir = top_level_dirs[0]
+                log.debug(
+                    f"Flattening: moving contents of '{source_dir.name}' to '{destination}'"
+                )
+                for item in source_dir.iterdir():
+                    dest_item = Path(destination) / item.name
+                    if dest_item.exists():
+                        if dest_item.is_dir():
+                            _shutil.rmtree(dest_item)
+                        else:
+                            dest_item.unlink()
+                    _shutil.move(str(item), str(dest_item))
+                # Remove the now-empty directory
+                source_dir.rmdir()
+            else:
+                # Multiple directories, files at root, or empty - use normal extraction
+                if len(top_level_dirs) > 1:
+                    log.debug(
+                        "Multiple top-level directories found, using normal extraction"
+                    )
+                elif len(top_level_files) > 0:
+                    log.warning(
+                        "flatten=True but archive has no redundant folder to remove "
+                        "(files already at root). Extracting normally."
+                    )
+                else:
+                    log.debug("Empty archive, using normal extraction")
+
+                # Copy all contents from temp_path to destination
+                for item in top_level_items:
+                    dest_item = Path(destination) / item.name
+                    if dest_item.exists():
+                        if dest_item.is_dir():
+                            _shutil.rmtree(dest_item)
+                        else:
+                            dest_item.unlink()
+                    if item.is_dir():
+                        _shutil.copytree(str(item), str(dest_item))
+                    else:
+                        _shutil.copy2(str(item), str(dest_item))
+    else:
+        with zipfile.ZipFile(str(source), 'r') as _zip:
+            log.debug(f"Unzipping '{source}' to '{destination}'")
+            _zip.extractall(str(destination), members=members, pwd=password)
 
 
 def is_filename_archive(filename):

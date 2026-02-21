@@ -30,6 +30,7 @@ class Entry(BaseModel):
     arguments: Optional[str] = None
     archive_password: Optional[str] = None
     variables: Optional[dict] = None
+    flatten: Optional[bool] = False
 
     @field_validator('unzip_target')
     def validate_unzip_target(cls, v: str):
