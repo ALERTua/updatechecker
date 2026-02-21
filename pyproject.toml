@@ -6,10 +6,10 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "dynaconf",
+    "httpx",
     "psutil",
     "pydantic",
     "pyyaml",
-    "requests",
     "rich",
 ]
 

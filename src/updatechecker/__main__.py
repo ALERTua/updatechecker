@@ -78,12 +78,21 @@ def process_entry(entry):
     if target.is_dir():
         entry.target = target = target / url_file
 
+    # Check if file needs update using HEAD request (skip if already up to date)
+    needs_update = tools.file_needs_update(url, target)
+
     if not target.exists():
         log.debug(f"Target '{target}' doesn't exist. Just downloading url")
         tools.download_file_from_url(url, target)
+        tools.update_file_metadata(url, target)
         process_archive(entry)
         if launch:
             _launch(launch, arguments)
+        return
+
+    # If HEAD check determined file doesn't need update, skip download
+    if needs_update is False:
+        log.info(f"No need to update '{target}' (HEAD check: file unchanged)")
         return
 
     target_md5 = tools.md5sum(target)
@@ -95,19 +104,36 @@ def process_entry(entry):
 
     del_temp()
 
-    if url_md5 is None:
-        tools.download_file_from_url(url, temp_file)
-        url_md5 = tools.md5sum(temp_file)
+    # If HEAD check failed or returned None, fall back to MD5 comparison
+    if needs_update is None:
+        log.debug("HEAD check failed, falling back to MD5 comparison")
+        if url_md5 is None:
+            tools.download_file_from_url(url, temp_file)
+            url_md5 = tools.md5sum(temp_file)
+        else:
+            url_md5 = tools.read_url(url_md5)
+            url_md5 = url_md5.split(' ')[0]
+
+        if target_md5 == url_md5:
+            log.info(f"No need to update '{target}' (MD5 check)")
+            # Update metadata after confirming no update needed
+            tools.update_file_metadata(url, target)
+            del_temp()
+            return
+
+        log.debug(f"md5 url vs target: '{url_md5}' '{target_md5}'")
     else:
-        url_md5 = tools.read_url(url_md5)
-        url_md5 = url_md5.split(' ')[0]
+        # HEAD check returned True - need to update, but use MD5 if available
+        if url_md5 is not None:
+            url_md5 = tools.read_url(url_md5)
+            url_md5 = url_md5.split(' ')[0]
+            if target_md5 == url_md5:
+                log.info(
+                    f"No need to update '{target}' (MD5 matches despite HEAD change)"
+                )
+                tools.update_file_metadata(url, target)
+                return
 
-    if target_md5 == url_md5:
-        log.info(f"No need to update '{target}'")
-        del_temp()
-        return
-
-    log.debug(f"md5 url vs target: '{url_md5}' '{target_md5}'")
     log.info(f"Updating {target}")
 
     bak_file = Path(target.with_suffix('.bak'))
@@ -134,6 +160,9 @@ def process_entry(entry):
         del_temp()
     else:
         tools.download_file_from_url(url, target)
+
+    # Update metadata after successful download
+    tools.update_file_metadata(url, target)
 
     process_archive(entry)
     if not target.exists() and bak_file.exists():
