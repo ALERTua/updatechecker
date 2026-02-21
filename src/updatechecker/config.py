@@ -291,10 +291,12 @@ def _validate_entries_with_variables(value=None):
 
 
 validators = [
-    Validator("entries", must_exist=True),
-    Validator('entries', is_type_of=dict),
-    Validator("entries", condition=_validate_entries_with_variables),
-    Validator("variables", is_type_of=dict, default={}),
+    Validator("entries", must_exist=True, env='updatechecker'),
+    Validator('entries', is_type_of=dict, env='updatechecker'),
+    Validator(
+        "entries", condition=_validate_entries_with_variables, env='updatechecker'
+    ),
+    Validator("variables", is_type_of=dict, default={}, env='updatechecker'),
 ]
 config_kwargs = dict(
     env='updatechecker',
