@@ -14,10 +14,6 @@ dependencies = [
     "requests",
 ]
 
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
-
 [dependency-groups]
 dev = [
     "pre-commit-uv",
@@ -26,6 +22,8 @@ dev = [
     "ruff",
     "rust-just",
 ]
+[tool.uv]
+package = true
 
 [project.scripts]
 updatechecker = "updatechecker.__main__:main"
