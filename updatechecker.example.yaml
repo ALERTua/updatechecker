@@ -97,6 +97,25 @@
 #   - Understanding the order helps debug expansion issues
 #   - Ensures predictable behavior when combining features
 #
+# -----------------------------------------------------------------------------
+# RULE 7: Flattening Zip Archives - flatten
+# -----------------------------------------------------------------------------
+# Some GitHub releases contain a redundant versioned folder inside the zip.
+# For example: D2RMM.1.8.1.zip contains a folder named D2RMM.1.8.1/
+# If you set flatten: true, files will be extracted directly to unzip_target,
+# skipping the redundant parent directory.
+#
+# Example:
+#   d2rmm:
+#     url: "https://github.com/olegbl/d2rmm"
+#     git_asset: 'D2RMM.*\.zip'
+#     target: '{{games_dir}}\D2RMM.zip'
+#     unzip_target: '{{games_dir}}\D2RMM'
+#     flatten: true
+#
+# NOTE: flatten only works when there's exactly ONE top-level directory in the zip.
+#       If there are multiple directories or files at root level, it falls back
+#       to normal extraction.
 # =============================================================================
 # EXAMPLE CONFIG
 # =============================================================================
@@ -144,3 +163,11 @@ entries:
   arcdps_extras:
     url: "https://www.deltaconnected.com/arcdps/x64/extras/d3d9_arcdps_extras.dll"
     target: '{{gw2_dir}}\bin64'
+
+  # Example using flatten to skip redundant versioned folder in zip archives
+  d2rmm:
+    url: "https://github.com/olegbl/d2rmm"
+    git_asset: 'D2RMM.*\.zip'
+    target: '{{games_dir}}\D2RMM.zip'
+    unzip_target: '{{games_dir}}\D2RMM'
+    flatten: true

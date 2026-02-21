@@ -151,11 +151,14 @@ def process_archive(entry):
     kill_if_locked = entry.kill_if_locked
     unzip_target = entry.unzip_target
     archive_password = entry.archive_password
+    flatten = entry.flatten
     target = Path(entry.target)
 
     if tools.is_filename_archive(target.name) and unzip_target is not None:
         try:
-            tools.unzip_file(target, unzip_target, password=archive_password)
+            tools.unzip_file(
+                target, unzip_target, password=archive_password, flatten=flatten
+            )
         except Exception as e:
             log.warning(f"Couldn't unzip archive to '{unzip_target}': {type(e)} {e}")
 
@@ -164,7 +167,9 @@ def process_archive(entry):
                 tools.kill_process(exe_path=kill_if_locked)
 
             try:
-                tools.unzip_file(target, unzip_target, password=archive_password)
+                tools.unzip_file(
+                    target, unzip_target, password=archive_password, flatten=flatten
+                )
             except Exception as e:
                 log.warning(
                     f"Couldn't unzip archive to '{unzip_target}' after unlocking: {type(e)} {e}. Breaking"
