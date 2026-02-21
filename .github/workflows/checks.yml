@@ -28,6 +28,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Set environment variables to mimic Windows
+        run: |
+          echo "USERPROFILE=$HOME" >> $GITHUB_ENV
+
       - name: Install dependencies
         run: uv sync --locked --all-extras --dev
 
