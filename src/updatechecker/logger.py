@@ -83,7 +83,9 @@ class Log:
             os.mkdir(str(constants.LOGS_FOLDER))
 
         if Log.log_session_filename is None:
-            Log.log_session_filename = f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
+            Log.log_session_filename = (
+                f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
+            )
             self.clean_logs_folder()
 
         formatter = logging.Formatter(
