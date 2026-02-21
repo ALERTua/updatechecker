@@ -1,14 +1,14 @@
 import os
 import pprint
 import shutil
+import logging
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 import psutil as psutil
-from .logger import Log
 from . import constants, common_tools as tools
 from .config import config, Entry, substitute_variables
 
-log = Log.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 def prepare_entry(entry_dict: dict, name: str, variables: dict) -> Entry:
@@ -42,7 +42,7 @@ def prepare_entry(entry_dict: dict, name: str, variables: dict) -> Entry:
 
 
 def process_entry(entry):
-    log.printer(f"Processing entry '{entry.name}'")
+    log.info(f"Processing entry '{entry.name}'")
     log.debug(f"{pprint.pformat(entry.model_dump())}")
     url = entry.url
     url_md5 = entry.md5
@@ -103,12 +103,12 @@ def process_entry(entry):
         url_md5 = url_md5.split(' ')[0]
 
     if target_md5 == url_md5:
-        log.printer(f"No need to update '{target}'", color=False)
+        log.info(f"No need to update '{target}'")
         del_temp()
         return
 
     log.debug(f"md5 url vs target: '{url_md5}' '{target_md5}'")
-    log.printer(f"Updating {target}")
+    log.info(f"Updating {target}")
 
     bak_file = Path(target.with_suffix('.bak'))
     if bak_file.exists():

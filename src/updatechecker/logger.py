@@ -1,214 +1,134 @@
-from colorama import Fore
-from colorlog import ColoredFormatter, default_log_colors
+"""Custom logger with Rich progress bar support for downloads."""
 
-import datetime
 import logging
-import os
-import pprint
-import re
-import sys
-import time
+from typing import Optional
 
-# noinspection PyCompatibility
-from pathlib import Path
+from rich.progress import (
+    Progress,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+    TimeElapsedColumn,
+)
+from rich.console import Console
 
-from . import constants
+console = Console()
 
-
-class InfoFilter(logging.Filter):
-    def filter(self, rec):
-        return rec.levelno <= logging.INFO
-
-
-class PrettyLog:
-    def __init__(self, obj):
-        self.obj = obj
-
-    def __repr__(self):
-        if isinstance(self.obj, str):
-            return self.obj
-
-        return pprint.pformat(self.obj)
+# Global progress instance for downloads
+_progress: Optional[Progress] = None
+_download_tasks: dict[str, int] = {}
 
 
-class Struct:
-    def __init__(self, **entries):
-        self.__dict__.update(entries)
+def get_progress() -> Progress:
+    """Get or create the global Progress instance for downloads."""
+    global _progress
+    if _progress is None:
+        _progress = Progress(
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(bar_width=None),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        )
+    return _progress
 
 
-LOGGER_DEFAULT_LEVEL = logging.INFO
-LOGGER_LEVELS_DICT = {
-    'CRITICAL': logging.CRITICAL,
-    'ERROR': logging.ERROR,
-    'WARNING': logging.WARNING,
-    'INFO': logging.INFO,
-    'DEBUG': logging.DEBUG,
-}
-LOGGER_LEVELS = Struct(**LOGGER_LEVELS_DICT)
+def start_download_progress():
+    """Start the download progress display."""
+    global _progress
+    if _progress is not None and not _progress.live.is_started:
+        _progress.start()
 
 
-class Log:
-    loggers = {}
-    levels = LOGGER_LEVELS
-    default_level = LOGGER_DEFAULT_LEVEL
-    log_session_filename = None
+def stop_download_progress():
+    """Stop the download progress display."""
+    global _progress
+    if _progress is not None and _progress.live.is_started:
+        _progress.stop()
 
-    @staticmethod
-    def set_global_log_level(level):
-        print(f"Changing global logger level to {level}")
-        Log.default_level = level
-        for logger in Log.loggers.values():
-            logger.level = level
 
-    def __init__(self, name, _level=None):
-        level = _level or Log.default_level
-        verbose = os.getenv('verbose', None)
-        if verbose is not None:
-            level = logging.DEBUG
+def update_download_progress(filename: str, downloaded: int, total: int):
+    """Update the progress bar for a download.
 
-        self.name = name
-        self.log = logging.getLogger(self.name)
+    Args:
+        filename: Name of the file being downloaded
+        downloaded: Number of bytes downloaded
+        total: Total size of the file in bytes
+    """
+    global _download_tasks
 
-        self.debug = self.log.debug
-        self.info = self.log.info
-        self.warning = self.log.warning
-        self.error = self.log.error
-        self.critical = self.log.critical
-        self.exception = self.log.exception
+    progress = get_progress()
 
-        if not (
-            Path(constants.LOGS_FOLDER).exists()
-            and Path(constants.LOGS_FOLDER).is_dir()
-        ):
-            os.mkdir(str(constants.LOGS_FOLDER))
+    # Start progress if not running
+    if not progress.live.is_started:
+        progress.start()
 
-        if Log.log_session_filename is None:
-            Log.log_session_filename = (
-                f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
-            )
-            self.clean_logs_folder()
+    # Get or create task for this file
+    if filename not in _download_tasks:
+        _download_tasks[filename] = progress.add_task(
+            f"Downloading {filename}", total=total
+        )
 
+    task_id = _download_tasks[filename]
+
+    # Update the task with new progress
+    # If downloaded >= total, the download is complete
+    if downloaded >= total:
+        progress.update(task_id, completed=total)
+    else:
+        progress.update(task_id, completed=downloaded)
+
+
+def remove_download_task(filename: str):
+    """Remove a download task from tracking."""
+    global _download_tasks
+    if filename in _download_tasks:
+        del _download_tasks[filename]
+
+
+def clear_download_tasks():
+    """Clear all download tasks."""
+    global _download_tasks
+    _download_tasks.clear()
+
+
+# Custom logger class that extends logging.Logger
+class UpdateCheckerLogger(logging.Logger):
+    """Custom logger with additional methods for progress tracking."""
+
+    def warning_msg(self, message: str, *args, **kwargs):
+        """Deprecated: Use warning() instead."""
+        self.warning(message, *args, **kwargs)
+
+    def update_download_progress(self, filename: str, downloaded: int, total: int):
+        """Update download progress (delegates to global progress tracker)."""
+        update_download_progress(filename, downloaded, total)
+
+
+# Setup logging
+def setup_logger(name: str) -> logging.Logger:
+    """Setup and return a logger with the given name."""
+    logger = logging.getLogger(name)
+
+    # If no handlers, add a default one
+    if not logger.handlers:
+        handler = logging.StreamHandler()
         formatter = logging.Formatter(
-            constants.LOGGER_MESSAGE_FORMAT, datefmt=constants.LOGGER_DATE_FORMAT
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
-        color_formatter = ColoredFormatter(
-            fmt=constants.LOGGER_COLORED_MESSAGE_FORMAT,
-            datefmt=constants.LOGGER_DATE_FORMAT,
-            reset=True,
-            log_colors=default_log_colors,
-        )
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
 
-        self.stdout_handler = logging.StreamHandler(sys.stdout)
-        self.stdout_handler.addFilter(InfoFilter())
-        self.log.addHandler(self.stdout_handler)
-        self.stdout_handler.setFormatter(color_formatter)
-
-        self.stderr_handler = logging.StreamHandler(sys.stderr)
-        self.log.addHandler(self.stderr_handler)
-        self.stderr_handler.setFormatter(color_formatter)
-
-        log_file_full_path = Path(constants.LOGS_FOLDER) / Log.log_session_filename
-        self.filehandler = logging.FileHandler(str(log_file_full_path))
-        self.filehandler.setFormatter(formatter)
-        self.log.addHandler(self.filehandler)
-
-        self.level = level
-        Log.loggers[self.name] = self
-
-    def __str__(self):
-        return self.name
-
-    def __hash__(self):
-        return hash(self.name)
-
-    def __eq__(self, other):
-        return self.name == other.name
-
-    @property
-    def verbose(self):
-        return self.level == logging.DEBUG
-
-    @verbose.setter
-    def verbose(self, value):
-        if value is True:
-            self.set_global_log_level(logging.DEBUG)
-        else:
-            self.set_global_log_level(logging.INFO)
-
-    @classmethod
-    def getLogger(cls, name, _level=None):
-        output = Log.loggers.get(name, None)
-        if output is None:
-            output = cls(name, _level=None)
-        return output
-
-    @property
-    def level(self):
-        return self.stdout_handler.level
-
-    @level.setter
-    def level(self, value):
-        Log.default_level = value
-        self.log.setLevel(logging.DEBUG)
-        self.filehandler.setLevel(logging.DEBUG)
-        self.stdout_handler.setLevel(value)
-        self.stderr_handler.setLevel(logging.WARNING)
-
-    @staticmethod
-    def clean_logs_folder():
-        log_files = sorted(
-            list(Path(constants.LOGS_FOLDER).glob('*.log')),
-            key=lambda f: f.stat().st_ctime,
-            reverse=True,
-        )
-        if len(log_files) > constants.MAX_LOG_FILES:
-            for _file in log_files[constants.MAX_LOG_FILES :]:
-                # noinspection PyBroadException
-                try:
-                    os.remove(str(_file))
-                except:  # noqa: E722
-                    pass
-
-    def printer(self, *message, **kwargs):
-        # for exception in EXCEPTIONS:
-        #     if exception in message:
-        #         return
-
-        default_end = '\n'
-        end = kwargs.get('end', None)
-        color = kwargs.get('color', True)
-        clear = kwargs.get('clear', True)
-        print_end = end if end is not None else default_end
-        for msg in message:
-            timestamp = '' if end == '' else f'{time.strftime("%H:%M:%S")} '
-
-            _timestamped_message = f'{timestamp}{msg}'
-            _cleared_timestamped_message = re.sub(
-                r'\x1b(\[.*?[@-~]|\].*?(\x07|\x1b\\))', '', _timestamped_message
-            )
-
-            self.filehandler.stream.write(_cleared_timestamped_message)
-            self.filehandler.flush()
-
-            _cleared_message = msg
-            if clear is True:
-                _cleared_message = re.sub(
-                    r'\x1b(\[.*?[@-~]|\].*?(\x07|\x1b\\))', '', msg
-                )
-
-            _colored_msg = _cleared_message
-            if color is True:
-                _colored_msg = f'{Fore.GREEN}{_cleared_message}{Fore.RESET}'
-
-            print(_colored_msg, end=print_end)
+    return logger
 
 
-if __name__ == '__main__':
-    log = Log.getLogger(__name__)
-    # log.clean_logs_folder()
-    log.debug('test debug')
-    log.info('test info')
-    log.error('test error')
-    log.printer('test filehandler message')
-    log.warning('test warning')
-    print("")
+# Create the module-level log instance
+log = setup_logger(__name__)
+
+# Add progress control methods to the log instance for convenience
+log.update_download_progress = update_download_progress
+log.start_download_progress = start_download_progress
+log.stop_download_progress = stop_download_progress
+log.get_progress = get_progress

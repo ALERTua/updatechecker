@@ -12,9 +12,7 @@ import psutil as psutil
 import requests
 
 from . import constants
-from .logger import Log
-
-log = Log.getLogger(__name__)
+from .logger import log
 
 
 def process_running(executeable=None, exe_path=None, cmdline=None):
@@ -78,7 +76,7 @@ def kill_process(executeable=None, exe_path=None, cmdline=None):
         executeable=executeable, exe_path=exe_path, cmdline=cmdline
     )
     for process in running_processes:
-        log.printer(f"Killing process {process.pid}")
+        log.warning(f"Killing process {process.pid}")
         process.kill()
 
 
@@ -192,18 +190,24 @@ def md5sum(path):
 
 
 def download_file_from_url(source, destination):
-    def basic_progress(blocknum, bs, size):
-        if blocknum % 10 == 0:
-            log.printer('.', end='', color=False)
+    """Download a file from a URL to a destination path with progress bar."""
+    filename = source.split('/')[-1]
 
-    log.printer(f"Downloading '{source}' to '{destination}'", end='', color=False)
+    def progress_callback(blocknum, bs, size):
+        """Progress callback for urlretrieve."""
+        if size > 0:
+            downloaded = blocknum * bs
+            if downloaded > size:
+                downloaded = size
+            # Update Rich progress bar
+            log.update_download_progress(filename, downloaded, size)
+
     try:
-        urlretrieve(source, str(destination), basic_progress)
+        urlretrieve(source, str(destination), progress_callback)
     except Exception as e:
         log.error(f"Error downloading '{source}' to '{destination}'\n{type(e)} {e}")
         return None
 
-    log.printer('Done', color=False)
     return Path(destination)
 
 
