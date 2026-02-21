@@ -1,20 +1,79 @@
 [project]
 name = "updatechecker"
-version = "0.1.0"
-description = "Add your description here"
+version = "0"
+description = ""
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = "==3.14.*"
 dependencies = [
-    "colorama>=0.4.6",
-    "colorlog>=6.9.0",
-    "dynaconf>=3.2.6",
-    "psutil>=6.1.1",
-    "pydantic>=2.10.5",
-    "pyyaml>=6.0.2",
-    "requests>=2.32.3",
+    "colorama",
+    "colorlog",
+    "dynaconf",
+    "psutil",
+    "pydantic",
+    "pyyaml",
+    "requests",
 ]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.3.4",
+    "pre-commit-uv",
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+    "rust-just",
 ]
+
+[project.scripts]
+updatechecker = "updatechecker.__main__:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+src = ["src", "test"]
+extend-exclude = [
+    ".idea/",
+    "script/",
+    "dist/",
+    "media/",
+    ".venv/",
+]
+extend-include = []
+output-format = "grouped"
+respect-gitignore = true
+
+[tool.ruff.lint]
+task-tags = ["TODO"]
+
+[tool.ruff.format]
+docstring-code-format = true
+docstring-code-line-length = 88
+quote-style = "preserve"
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 88
+max-line-length = 120
+
+[tool.ruff.lint.pylint]
+max-args = 10
+max-branches = 15
+max-nested-blocks = 10
+max-positional-args = 3
+max-public-methods = 30
+
+[tool.ruff.lint.extend-per-file-ignores]
+"__init__.py" = ["E402"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+addopts = ["-ra", "-q", "-m", "not integration"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+markers = ["integration: marks tests as integration tests (deselect with '-m \"not integration\"')"]

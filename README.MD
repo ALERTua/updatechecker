@@ -32,7 +32,7 @@ A Python utility for automatically checking and downloading updates for files an
 
 ## Getting Started
 
-- Create `%USERPROFILE%\updatechecker.yaml` (or just `updatechecker.example.yaml` in the cloned repository folder) from [updatechecker.example.yaml](updatechecker.example.yaml)
+- Create `updatechecker.yaml` in `%USERPROFILE%` or in the cloned repository folder from [updatechecker.example.yaml](updatechecker.example.yaml)
 - Modify its values according to the examples
 
 ### Installation

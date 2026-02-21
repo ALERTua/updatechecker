@@ -2,6 +2,26 @@ logs/
 .idea/
 venv/
 temp/
-__pycache__/
 /updatechecker.yaml
 config.disabled.json
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv*/
+
+.tox/
+.pytest_cache/
+*.pyc
+.env
+*.*~
+**/__pycache__
+tryouts*.py
+.idea
+plans/

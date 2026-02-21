@@ -1,32 +1,147 @@
+# =============================================================================
+# VARIABLE SYNTAX RULES
+# =============================================================================
+#
+# This section explains the variable syntax supported in updatechecker config files.
+# Following these rules ensures your configuration works correctly.
+#
+# -----------------------------------------------------------------------------
+# RULE 1: Environment Variables - %ENV_VAR%
+# -----------------------------------------------------------------------------
+# Use %ENV_VAR% syntax to access operating system environment variables.
+# These are expanded FIRST, before config variables.
+#
+# Examples:
+#   %USERPROFILE%     -> C:\Users\YourName
+#   %SYSTEMROOT%      -> C:\Windows
+#
+# NOTE: Environment variables are expanded in BOTH variable definitions AND
+#       in entry paths/values. This happens at config load time.
+#
+# -----------------------------------------------------------------------------
+# RULE 2: Config Variables - {{variable_name}}
+# -----------------------------------------------------------------------------
+# Define your own variables in the 'variables:' section and reference them
+# using {{variable_name}} syntax in entry paths and values.
+#
+# Examples:
+#   variables:
+#     games_dir: 'D:\Games'
+#   entries:
+#     my_entry:
+#       target: '{{games_dir}}\myfile.exe'
+#
+# -----------------------------------------------------------------------------
+# RULE 3: Chained Variable References
+# -----------------------------------------------------------------------------
+# Config variables can reference other config variables that were defined
+# earlier in the variables section. This is called "chaining".
+#
+# Examples:
+#   variables:
+#     base_dir: 'D:\Games'
+#     gw2_dir: '{{base_dir}}\GW2'        # References base_dir
+#     tools_dir: '{{gw2_dir}}\tools'     # References gw2_dir
+#
+# IMPORTANT: Variables can only reference variables defined BEFORE them.
+#            Forward references (using a not-yet-defined variable) will fail.
+#
+# -----------------------------------------------------------------------------
+# RULE 4: Per-Entry Variables
+# -----------------------------------------------------------------------------
+# Each entry can define its own 'variables:' section that:
+#   - Overrides global variables with the same name
+#   - Adds new variables specific to that entry
+
+# Examples:
+#   variables:
+#     drive_root: 'D:\'          # Global default
+#   entries:
+#     my_entry:
+#       variables:
+#         drive_root: 'C:\'      # Override for this entry only
+#       target: '{{drive_root}}\file.exe'  # Uses C:
+#
+# Per-entry variables can also reference global variables:
+#   entry_title:
+#     variables:
+#       subdir: '{{tools_dir}}\subfolder'  # Uses global tools_dir
+#
+# -----------------------------------------------------------------------------
+# RULE 5: Quote Usage
+# -----------------------------------------------------------------------------
+# Use single quotes '' for paths and strings that contain backslashes.
+# Use double quotes "" for simple strings like URLs.
+#
+# WHY FOLLOW THIS RULE:
+#   - In single quotes, backslash is literal - use one backslash: 'D:\Games'
+#   - In double quotes, backslash is an escape - use two to get one: "D:\\Games"
+#   - Single quotes are cleaner for Windows paths (no escaping needed)
+#   - Double quotes work fine for URLs without special chars
+#
+# Examples:
+#   target: 'D:\Games\file.exe'  # Single quotes - backslash is literal
+#   target: "D:\\Games\\file.exe" # Double quotes - \\ becomes \
+#   url: "https://example.com"    # Double quotes - simple URL
+#
+# -----------------------------------------------------------------------------
+# RULE 6: Variable Expansion Order
+# -----------------------------------------------------------------------------
+# Variables are expanded in this specific order:
+#   1. Environment variables (%ENV_VAR%) in variable values
+#   2. Config variable chaining ({{var_a}} -> {{var_b}} -> final value)
+#   3. Per-entry variable merging (entry vars override global vars)
+#   4. Variable substitution in entry paths and values
+#
+# WHY FOLLOW THIS RULE:
+#   - Understanding the order helps debug expansion issues
+#   - Ensures predictable behavior when combining features
+#
+# =============================================================================
+# EXAMPLE CONFIG
+# =============================================================================
+variables:
+  games_dir: 'D:\Games'
+  gw2_dir: '{{games_dir}}\GW2'
+  tools_dir: '{{gw2_dir}}\tools'
+  progs: 'D:\Progs'
+  # Environment variable in variable value - useful for portable configs
+  user_home: '%USERPROFILE%'
+
 entries:
+
   entry_title:
+    variables:
+      drive_root: 'C:'  # variables can be defined per entry and will override the global ones
+
     url: "https://github.com/username/repo"  # file uri or git repo uri
-    git_asset: ""  # a regexp pattern to get the git release file if the url is a github repo
+    git_asset: ''  # a regexp pattern to get the git release file if the url is a github repo
     md5: "https://www.md5.file/uri"  # uri that contains an md5 hash for the downloaded file
     # notice paths are surrounded with single quotes while URL and other strings - with double quotes
-    target: 'C:\file.zip'  # full file directory path or full file path to download the file to
-    unzip_target: 'C:\'  # if the file is an archive - unzip it to target
+    target: '{{drive_root}}\file.zip'  # full file directory path or full file path to download the file to
+    unzip_target: '{{drive_root}}'  # if the file is an archive - unzip it to target
     archive_password: "archive password"
-    kill_if_locked: 'C:\windows\explorer.exe'  # kill this process full path or name, if the target is locked while downloading or unzipping
+    kill_if_locked: '%SYSTEMROOT%\explorer.exe'  # kill this process full path or name, if the target is locked while downloading or unzipping
     relaunch: true  # Relaunch the kill_if_locked path. default: false
-    launch: 'C:\windows\explorer.exe'  # launch this file after download
+    launch: '%SYSTEMROOT%\explorer.exe'  # launch this file after download
     arguments: ''  # launch the launch with these arguments
 
   d912pxy:
     url: "https://github.com/megai2/d912pxy"
     git_asset: 'd912pxy.*?\.zip'
-    target: 'D:\Games\GW2\_tools\d912pxy.zip'
-    unzip_target: 'D:\Games\GW2'
+    target: '{{tools_dir}}\d912pxy.zip'
+    unzip_target: '{{gw2_dir}}'
     archive_password: null
-    kill_if_locked: 'D:\Games\GW2\Gw2-64.exe'
+    kill_if_locked: '{{gw2_dir}}\Gw2-64.exe'
     relaunch: false
 
   linkshellextension:
-    url: "http://schinagl.priv.at/nt/hardlinkshellext/HardLinkShellExt_X64.exe"
-    target: 'D:\Progs\HardLinkShellExt_X64.exe'
-    launch: 'D:\Progs\HardLinkShellExt_X64.exe'
+    url: "https://schinagl.priv.at/nt/hardlinkshellext/HardLinkShellExt_X64.exe"
+    target: '{{progs}}\HardLinkShellExt_X64.exe'
+    launch: '{{progs}}\HardLinkShellExt_X64.exe'
     arguments: "/S"
 
   arcdps_extras:
     url: "https://www.deltaconnected.com/arcdps/x64/extras/d3d9_arcdps_extras.dll"
-    target: 'G:\Games\GW2\bin64'
+    target: '{{gw2_dir}}\bin64'
+
