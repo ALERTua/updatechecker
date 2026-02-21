@@ -198,10 +198,7 @@ fresh_vars = [
     "variables",
 ]
 
-defaults = dict(
-    entries=[],
-    variables={},
-)
+defaults = {"entries": [], "variables": {}}
 
 
 def _read_yaml_variables() -> dict:

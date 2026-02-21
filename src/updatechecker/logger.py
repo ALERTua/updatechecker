@@ -47,7 +47,7 @@ LOGGER_LEVELS_DICT = {
 LOGGER_LEVELS = Struct(**LOGGER_LEVELS_DICT)
 
 
-class Log(object):
+class Log:
     loggers = {}
     levels = LOGGER_LEVELS
     default_level = LOGGER_DEFAULT_LEVEL
@@ -55,7 +55,7 @@ class Log(object):
 
     @staticmethod
     def set_global_log_level(level):
-        print("Changing global logger level to %s" % level)
+        print(f"Changing global logger level to {level}")
         Log.default_level = level
         for logger in Log.loggers.values():
             logger.level = level
@@ -180,9 +180,9 @@ class Log(object):
         clear = kwargs.get('clear', True)
         print_end = end if end is not None else default_end
         for msg in message:
-            timestamp = '' if end == '' else '%s ' % time.strftime("%H:%M:%S")
+            timestamp = '' if end == '' else f'{time.strftime("%H:%M:%S")} '
 
-            _timestamped_message = '%s%s' % (timestamp, msg)
+            _timestamped_message = f'{timestamp}{msg}'
             _cleared_timestamped_message = re.sub(
                 r'\x1b(\[.*?[@-~]|\].*?(\x07|\x1b\\))', '', _timestamped_message
             )
@@ -198,7 +198,7 @@ class Log(object):
 
             _colored_msg = _cleared_message
             if color is True:
-                _colored_msg = '%s%s%s' % (Fore.GREEN, _cleared_message, Fore.RESET)
+                _colored_msg = f'{Fore.GREEN}{_cleared_message}{Fore.RESET}'
 
             print(_colored_msg, end=print_end)
 

@@ -236,4 +236,4 @@ def unzip_file(source, destination, members=None, password=None):
 
 def is_filename_archive(filename):
     archive_exts = ('.zip', '.7z', '.rar')
-    return any([ext for ext in archive_exts if ext in filename])
+    return any(ext for ext in archive_exts if ext in filename)
