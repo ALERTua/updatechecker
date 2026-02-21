@@ -40,5 +40,5 @@ A Python utility for automatically checking and downloading updates for files an
    ```bash
    git clone https://github.com/ALERTua/updatechecker.git
    ```
-2. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) 
+2. Install [uv](https://docs.astral.sh/uv/getting-started/installation/)
 3. Execute [updatechecker.cmd](updatechecker.cmd)

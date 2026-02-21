@@ -144,4 +144,3 @@ entries:
   arcdps_extras:
     url: "https://www.deltaconnected.com/arcdps/x64/extras/d3d9_arcdps_extras.dll"
     target: '{{gw2_dir}}\bin64'
-

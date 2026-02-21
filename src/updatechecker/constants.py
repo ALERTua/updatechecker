@@ -13,7 +13,9 @@ if not LOGS_FOLDER.exists():
 CONFIG_FILE = ROOT_FOLDER / 'config.json'
 HASHES_FILE = ROOT_FOLDER / 'hashes.json'
 
-LOGGER_MESSAGE_FORMAT = '%(asctime)s.%(msecs)03d %(lineno)3s:%(name)-22s %(levelname)-6s %(message)s'
+LOGGER_MESSAGE_FORMAT = (
+    '%(asctime)s.%(msecs)03d %(lineno)3s:%(name)-22s %(levelname)-6s %(message)s'
+)
 LOGGER_COLORED_MESSAGE_FORMAT = '%(log_color)s%(message)s'
 LOGGER_DATE_FORMAT = '%H:%M:%S'
 MAX_LOG_FILES = 10

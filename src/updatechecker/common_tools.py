@@ -18,7 +18,7 @@ log = Log.getLogger(__name__)
 
 
 def process_running(executeable=None, exe_path=None, cmdline=None):
-    """ Returns a list of running processes with executeable equals name and/or full path to executeable equals path
+    """Returns a list of running processes with executeable equals name and/or full path to executeable equals path
 
     :param executeable: process executeable name
     :type executeable: str
@@ -42,7 +42,8 @@ def process_running(executeable=None, exe_path=None, cmdline=None):
         if exe_path is not None:
             try:
                 process_path = process.exe()
-            except:
+            except Exception as e:
+                log.exception(e)
                 continue
 
             if Path(process_path) == Path(exe_path):
@@ -53,23 +54,29 @@ def process_running(executeable=None, exe_path=None, cmdline=None):
         if cmdline is not None:
             try:
                 process_cmdline = process.cmdline()
-            except:
+            except Exception as e:
+                log.exception(e)
                 continue
 
             # process_cmdline = [str_decode(_cmdln).lower().replace('\\', '/').strip('/') for _cmdln in process_cmdline]
-            process_cmdline = [_cmdln.lower().replace('\\', '/').strip('/') for _cmdln in process_cmdline]
+            process_cmdline = [
+                _cmdln.lower().replace('\\', '/').strip('/')
+                for _cmdln in process_cmdline
+            ]
             if cmdline.lower().replace('\\', '/').strip('/') in process_cmdline:
                 append = True
             else:
                 continue
 
-        if append is True:
+        if append:
             output_processes.append(process)
     return output_processes
 
 
 def kill_process(executeable=None, exe_path=None, cmdline=None):
-    running_processes = process_running(executeable=executeable, exe_path=exe_path, cmdline=cmdline)
+    running_processes = process_running(
+        executeable=executeable, exe_path=exe_path, cmdline=cmdline
+    )
     for process in running_processes:
         log.printer(f"Killing process {process.pid}")
         process.kill()
@@ -102,16 +109,20 @@ def git_latest_release(releases):
     return releases[0]
 
 
-def git_release_get_asset_url(release, asset_name):
+def git_release_get_asset_url(release, asset_name) -> str | None:
     assets = release.get('assets')
     if assets is None:
         log.warning(f"Couldn't get asset url for '{asset_name}'")
-        return
+        return None
 
-    matching_assets = list(filter(lambda f: re.match(asset_name, f.get('name')) is not None, assets))
+    matching_assets = list(
+        filter(lambda f: re.match(asset_name, f.get('name')) is not None, assets)
+    )
     if not any(matching_assets):
-        log.warning(f"There are no assets of name '{asset_name}' @ '{release.get('url')}")
-        return
+        log.warning(
+            f"There are no assets of name '{asset_name}' @ '{release.get('url')}"
+        )
+        return None
 
     asset = matching_assets[0]
     output = asset.get('browser_download_url')
@@ -123,7 +134,8 @@ def url_accessible(_url):
     try:
         urlopen = urllib.request.urlopen(_url)
         getcode = urlopen.getcode()
-    except:
+    except Exception as e:
+        log.exception(e)
         getcode = None
 
     output = getcode == 200
@@ -136,7 +148,8 @@ def md5sum(path):
         try:
             Path(path).exists()
             path = Path(path)
-        except:
+        except Exception as e:
+            log.exception(e)
             pass
 
     if not isinstance(path, Path):
@@ -147,7 +160,9 @@ def md5sum(path):
 
         filename = url_to_filename(path)
         if filename is None:
-            log.warning(f"Cannot get md5 from url '{path}': couldn't get filename from url")
+            log.warning(
+                f"Cannot get md5 from url '{path}': couldn't get filename from url"
+            )
             return None
 
         temp_file_path = constants.TEMP_FOLDER / filename
@@ -156,7 +171,9 @@ def md5sum(path):
 
         downloaded_file = download_file_from_url(path, temp_file_path)
         if downloaded_file is None or not downloaded_file.exists():
-            log.warning(f"Couldn't get url '{path}' md5: couldn't download it to file '{downloaded_file}'")
+            log.warning(
+                f"Couldn't get url '{path}' md5: couldn't download it to file '{downloaded_file}'"
+            )
             return None
 
         path = downloaded_file
@@ -195,7 +212,9 @@ def url_to_filename(url):
     base = os.path.basename(parse.path)
     suffix = Path(base).suffix
     if suffix == '':
-        log.warning(f"Cannot get filename from url '{url}'. No dot in base '{parse.path}'")
+        log.warning(
+            f"Cannot get filename from url '{url}'. No dot in base '{parse.path}'"
+        )
         return None
 
     return base

@@ -54,6 +54,7 @@ class Entry(BaseModel):
 
 class Variables(BaseModel):
     """Dictionary of variable names to path strings."""
+
     model_config = {'extra': 'allow'}
 
     @model_validator(mode='before')
@@ -96,7 +97,9 @@ def expand_env_variables(text: str) -> str:
     def replace_env_var(match):
         var_name = match.group(1)
         if var_name not in os.environ:
-            raise ValueError(f"Undefined environment variable: '{var_name}' referenced in path")
+            raise ValueError(
+                f"Undefined environment variable: '{var_name}' referenced in path"
+            )
         return os.environ[var_name]
 
     return ENV_PATTERN.sub(replace_env_var, text)
@@ -145,12 +148,12 @@ def entry_validator(entries, variables=None):
 
         # Get entry-specific variables if present
         entry_vars = entry.pop('variables', None) or {}
-        
+
         # First expand environment variables in entry-specific variables
         expanded_entry_vars = {}
         for key, value in entry_vars.items():
             expanded_entry_vars[key] = expand_env_variables(value)
-        
+
         # Then expand chained config variables in entry-specific variables
         # (can reference other entry-specific variables or main variables)
         max_iterations = 10
@@ -159,7 +162,7 @@ def entry_validator(entries, variables=None):
             for _ in range(max_iterations):
                 if not VARIABLE_PATTERN.search(value):
                     break
-                
+
                 def replace_var(match):
                     var_name = match.group(1)
                     # Check entry-specific vars first, then main variables
@@ -167,8 +170,10 @@ def entry_validator(entries, variables=None):
                         return expanded_entry_vars[var_name]
                     if var_name in variables:
                         return variables[var_name]
-                    raise ValueError(f"Undefined variable: '{var_name}' referenced in entry '{entry_name}'")
-                
+                    raise ValueError(
+                        f"Undefined variable: '{var_name}' referenced in entry '{entry_name}'"
+                    )
+
                 new_value = VARIABLE_PATTERN.sub(replace_var, value)
                 if new_value == value:
                     break
@@ -186,6 +191,7 @@ def entry_validator(entries, variables=None):
         Entry(**entry, name=entry_name)
 
     return True
+
 
 fresh_vars = [
     "entries",
@@ -206,7 +212,7 @@ def _read_yaml_variables() -> dict:
         f"./{config_filename}",
         default_config_filepath,
     ]
-    
+
     for config_file in config_files:
         if os.path.exists(config_file):
             try:
@@ -227,7 +233,7 @@ def _read_yaml_entries() -> dict:
         f"./{config_filename}",
         default_config_filepath,
     ]
-    
+
     for config_file in config_files:
         if os.path.exists(config_file):
             try:
@@ -246,12 +252,12 @@ def _get_variables() -> dict:
     Variables are processed in order, so later variables can reference earlier ones."""
     # Read raw YAML to avoid triggering Dynaconf validation
     variables = _read_yaml_variables() or {}
-    
+
     # First expand environment variables in all values
     expanded_variables = {}
     for key, value in variables.items():
         expanded_variables[key] = expand_env_variables(value)
-    
+
     # Then iteratively expand config variable references until no more substitutions
     # Process in order so variables can reference previously defined ones
     final_variables = {}
@@ -262,18 +268,22 @@ def _get_variables() -> dict:
             # Check if there are any variable references left
             if not VARIABLE_PATTERN.search(value):
                 break
+
             # Try to substitute
             def replace_var(match):
                 var_name = match.group(1)
                 if var_name not in final_variables:
-                    raise ValueError(f"Undefined variable: '{var_name}' referenced in '{key}'")
+                    raise ValueError(
+                        f"Undefined variable: '{var_name}' referenced in '{key}'"
+                    )
                 return final_variables[var_name]
+
             new_value = VARIABLE_PATTERN.sub(replace_var, value)
             if new_value == value:
                 break  # No more changes
             value = new_value
         final_variables[key] = value
-    
+
     return final_variables
 
 

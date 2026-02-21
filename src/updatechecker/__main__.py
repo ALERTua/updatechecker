@@ -14,12 +14,13 @@ log = Log.getLogger(__name__)
 def prepare_entry(entry_dict: dict, name: str, variables: dict) -> Entry:
     """Create an Entry with variable substitution in path fields."""
     entry = entry_dict.copy()
-    
+
     # Get entry-specific variables and merge with global variables
     # Entry-specific variables take priority over global variables
     entry_vars = entry.pop('variables', {}) or {}
     # First expand environment variables in entry-specific variables
-    from .config import expand_env_variables, substitute_variables
+    from .config import expand_env_variables
+
     for key, value in entry_vars.items():
         entry_vars[key] = expand_env_variables(value)
     # Then expand config variable references in entry-specific variables
@@ -165,15 +166,20 @@ def process_archive(entry):
             try:
                 tools.unzip_file(target, unzip_target, password=archive_password)
             except Exception as e:
-                log.warning(f"Couldn't unzip archive to '{unzip_target}' after unlocking: {type(e)} {e}. Breaking")
+                log.warning(
+                    f"Couldn't unzip archive to '{unzip_target}' after unlocking: {type(e)} {e}. Breaking"
+                )
                 return
 
 
 def main(_async=True, threads=None):
     from .config import _get_variables
+
     variables = _get_variables()
-    config_entries = [prepare_entry(config_entry, config_entry_name, variables)
-                      for config_entry_name, config_entry in config.entries.items()]
+    config_entries = [
+        prepare_entry(config_entry, config_entry_name, variables)
+        for config_entry_name, config_entry in config.entries.items()
+    ]
     if _async:
         threads = threads or psutil.cpu_count() - 1
         with ThreadPoolExecutor(max_workers=threads) as executor:

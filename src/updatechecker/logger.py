@@ -8,6 +8,7 @@ import pprint
 import re
 import sys
 import time
+
 # noinspection PyCompatibility
 from pathlib import Path
 
@@ -36,11 +37,13 @@ class Struct:
 
 
 LOGGER_DEFAULT_LEVEL = logging.INFO
-LOGGER_LEVELS_DICT = {'CRITICAL': logging.CRITICAL,
-                      'ERROR': logging.ERROR,
-                      'WARNING': logging.WARNING,
-                      'INFO': logging.INFO,
-                      'DEBUG': logging.DEBUG}
+LOGGER_LEVELS_DICT = {
+    'CRITICAL': logging.CRITICAL,
+    'ERROR': logging.ERROR,
+    'WARNING': logging.WARNING,
+    'INFO': logging.INFO,
+    'DEBUG': logging.DEBUG,
+}
 LOGGER_LEVELS = Struct(**LOGGER_LEVELS_DICT)
 
 
@@ -73,17 +76,27 @@ class Log(object):
         self.critical = self.log.critical
         self.exception = self.log.exception
 
-        if not (Path(constants.LOGS_FOLDER).exists() and Path(constants.LOGS_FOLDER).is_dir()):
+        if not (
+            Path(constants.LOGS_FOLDER).exists()
+            and Path(constants.LOGS_FOLDER).is_dir()
+        ):
             os.mkdir(str(constants.LOGS_FOLDER))
 
         if Log.log_session_filename is None:
-            Log.log_session_filename = "%s.log" % datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            Log.log_session_filename = "%s.log" % datetime.datetime.now().strftime(
+                '%Y-%m-%d_%H-%M-%S'
+            )
             self.clean_logs_folder()
 
-        formatter = logging.Formatter(constants.LOGGER_MESSAGE_FORMAT, datefmt=constants.LOGGER_DATE_FORMAT)
-        color_formatter = ColoredFormatter(fmt=constants.LOGGER_COLORED_MESSAGE_FORMAT,
-                                           datefmt=constants.LOGGER_DATE_FORMAT, reset=True,
-                                           log_colors=default_log_colors)
+        formatter = logging.Formatter(
+            constants.LOGGER_MESSAGE_FORMAT, datefmt=constants.LOGGER_DATE_FORMAT
+        )
+        color_formatter = ColoredFormatter(
+            fmt=constants.LOGGER_COLORED_MESSAGE_FORMAT,
+            datefmt=constants.LOGGER_DATE_FORMAT,
+            reset=True,
+            log_colors=default_log_colors,
+        )
 
         self.stdout_handler = logging.StreamHandler(sys.stdout)
         self.stdout_handler.addFilter(InfoFilter())
@@ -143,13 +156,18 @@ class Log(object):
 
     @staticmethod
     def clean_logs_folder():
-        log_files = sorted(list(Path(constants.LOGS_FOLDER).glob('*.log')), key=lambda f: f.stat().st_ctime,
-                           reverse=True)
+        log_files = sorted(
+            list(Path(constants.LOGS_FOLDER).glob('*.log')),
+            key=lambda f: f.stat().st_ctime,
+            reverse=True,
+        )
         if len(log_files) > constants.MAX_LOG_FILES:
-            try:
-                [os.remove(str(_file)) for _file in log_files[constants.MAX_LOG_FILES:]]
-            except:
-                pass
+            for _file in log_files[constants.MAX_LOG_FILES :]:
+                # noinspection PyBroadException
+                try:
+                    os.remove(str(_file))
+                except:  # noqa: E722
+                    pass
 
     def printer(self, *message, **kwargs):
         # for exception in EXCEPTIONS:
@@ -165,14 +183,18 @@ class Log(object):
             timestamp = '' if end == '' else '%s ' % time.strftime("%H:%M:%S")
 
             _timestamped_message = '%s%s' % (timestamp, msg)
-            _cleared_timestamped_message = re.sub(r'\x1b(\[.*?[@-~]|\].*?(\x07|\x1b\\))', '', _timestamped_message)
+            _cleared_timestamped_message = re.sub(
+                r'\x1b(\[.*?[@-~]|\].*?(\x07|\x1b\\))', '', _timestamped_message
+            )
 
             self.filehandler.stream.write(_cleared_timestamped_message)
             self.filehandler.flush()
 
             _cleared_message = msg
             if clear is True:
-                _cleared_message = re.sub(r'\x1b(\[.*?[@-~]|\].*?(\x07|\x1b\\))', '', msg)
+                _cleared_message = re.sub(
+                    r'\x1b(\[.*?[@-~]|\].*?(\x07|\x1b\\))', '', msg
+                )
 
             _colored_msg = _cleared_message
             if color is True:

@@ -1,7 +1,7 @@
 """Tests for the variables feature in config."""
+
 import os
 import pytest
-import tempfile
 from updatechecker.config import (
     substitute_variables,
     expand_env_variables,
@@ -107,7 +107,9 @@ class TestSubstituteVariables:
         """Test combined %ENV_VAR% and {{config variable}} syntax."""
         monkeypatch.setenv('USERPROFILE', 'C:\\Users\\TestUser')
         variables = {'games_dir': 'D:\\Games'}
-        result = substitute_variables('%USERPROFILE%\\{{games_dir}}\\file.zip', variables)
+        result = substitute_variables(
+            '%USERPROFILE%\\{{games_dir}}\\file.zip', variables
+        )
         assert result == 'C:\\Users\\TestUser\\D:\\Games\\file.zip'
 
     def test_env_variable_first_then_config_variable(self, monkeypatch):
@@ -153,7 +155,7 @@ class TestEntryVariables:
             'entry1': {
                 'url': 'https://example.com',
                 'target': '{{games_dir}}\\file.zip',
-                'variables': {'games_dir': 'E:\\Games'}
+                'variables': {'games_dir': 'E:\\Games'},
             }
         }
         result = entry_validator(entries, main_vars)
@@ -170,7 +172,7 @@ class TestEntryVariables:
             'entry1': {
                 'url': 'https://example.com',
                 'target': '{{custom_dir}}\\file.zip',
-                'variables': {'custom_dir': '%TEST_DIR%'}
+                'variables': {'custom_dir': '%TEST_DIR%'},
             }
         }
         result = entry_validator(entries, main_vars)
@@ -182,7 +184,7 @@ class TestEntryVariables:
         entries = {
             'entry1': {
                 'url': 'https://example.com',
-                'target': '{{games_dir}}\\file.zip'
+                'target': '{{games_dir}}\\file.zip',
             }
         }
         result = entry_validator(entries, main_vars)
@@ -195,10 +197,7 @@ class TestEntryVariables:
             'entry1': {
                 'url': 'https://example.com',
                 'target': '{{subdir}}\\file.zip',
-                'variables': {
-                    'subdir': '{{base}}\\Sub',
-                    'deep': '{{subdir}}\\Deep'
-                }
+                'variables': {'subdir': '{{base}}\\Sub', 'deep': '{{subdir}}\\Deep'},
             }
         }
         result = entry_validator(entries, main_vars)
@@ -224,7 +223,7 @@ entries:
         # The function looks for updatechecker.yaml
         yaml_file = tmp_path / "updatechecker.yaml"
         yaml_file.write_text(yaml_content)
-        
+
         # Change to temp directory so it reads from there
         old_cwd = os.getcwd()
         try:
@@ -233,7 +232,7 @@ entries:
             assert variables == {
                 'games_dir': 'D:\\Games',
                 'tools_dir': 'D:\\Tools',
-                'portable': '{{c_alert}}/Portable'
+                'portable': '{{c_alert}}/Portable',
             }
         finally:
             os.chdir(old_cwd)
@@ -259,7 +258,7 @@ entries:
 """
         yaml_file = tmp_path / "updatechecker.yaml"
         yaml_file.write_text(yaml_content)
-        
+
         old_cwd = os.getcwd()
         try:
             os.chdir(tmp_path)
@@ -282,7 +281,7 @@ entries:
   test_entry:
     url: https://example.com
     target: '{{games_dir}}\\file.zip'
-  
+
   another_entry:
     url: https://another.com
     target: C:\\Downloads
@@ -290,7 +289,7 @@ entries:
         # The function looks for updatechecker.yaml
         yaml_file = tmp_path / "updatechecker.yaml"
         yaml_file.write_text(yaml_content)
-        
+
         old_cwd = os.getcwd()
         try:
             os.chdir(tmp_path)
@@ -327,7 +326,7 @@ entries: {}
 """
         yaml_file = tmp_path / "updatechecker.yaml"
         yaml_file.write_text(yaml_content)
-        
+
         old_cwd = os.getcwd()
         try:
             os.chdir(tmp_path)
@@ -348,7 +347,7 @@ entries: {}
 """
         yaml_file = tmp_path / "updatechecker.yaml"
         yaml_file.write_text(yaml_content)
-        
+
         old_cwd = os.getcwd()
         try:
             os.chdir(tmp_path)
@@ -371,7 +370,7 @@ entries: {}
 """
         yaml_file = tmp_path / "updatechecker.yaml"
         yaml_file.write_text(yaml_content)
-        
+
         old_cwd = os.getcwd()
         try:
             os.chdir(tmp_path)
@@ -404,7 +403,7 @@ entries: {}
 """
         yaml_file = tmp_path / "updatechecker.yaml"
         yaml_file.write_text(yaml_content)
-        
+
         old_cwd = os.getcwd()
         try:
             os.chdir(tmp_path)
@@ -420,23 +419,23 @@ class TestConfigNoRecursion:
 
     def test_config_loads_without_infinite_recursion(self):
         """Test that config can be loaded without causing infinite recursion.
-        
+
         This was the main bug: accessing config.entries or config.variables
         during validation triggered Dynaconf setup, which ran validators again,
         causing infinite recursion.
         """
         from updatechecker.config import config
-        
+
         # This should not cause RecursionError
         # The fix is that we now read YAML directly instead of through config
         assert config is not None
         # Basic sanity check - config should have entries
         assert hasattr(config, 'entries')
-        
+
     def test_validate_entries_does_not_trigger_setup(self):
         """Test that _validate_entries_with_variables doesn't trigger infinite setup."""
         from updatechecker.config import _validate_entries_with_variables
-        
+
         # This should return True without RecursionError
         # The function now reads YAML directly
         result = _validate_entries_with_variables()
