@@ -1,43 +1,33 @@
 import hashlib
 import json
-import os
-import re
-import urllib.request
+import shutil
+import tempfile
 import zipfile
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
-from urllib.parse import urlparse
-from urllib.request import urlretrieve
 
-import httpx
-import psutil as psutil
+import psutil
 
 from . import constants
+from .downloader import url_accessible, url_to_filename, get_url_headers
 from .logger import log
 
 
-def process_running(executeable=None, exe_path=None, cmdline=None):
-    """Returns a list of running processes with executeable equals name and/or full path to executeable equals path
+def process_running(executable=None, exe_path=None, cmdline=None):
+    """Returns a list of running processes matching the given criteria.
 
-    :param executeable: process executeable name
-    :type executeable: str
-    :param exe_path: full path to process executeable including name
-    :type exe_path: str
+    :param executable: process executable name
+    :param exe_path: full path to process executable including name
     :param cmdline: cmdline or a part of it that can be found in the process cmdline
-    :type cmdline: str
-    :rtype: list
+    :return: list of matching psutil.Process objects
     """
-    process_iter = psutil.process_iter()
     output_processes = []
-    for process in process_iter:
-        append = False
+    for process in psutil.process_iter():
         process_name = process.name()
-        if executeable is not None:
-            if process_name.lower() == executeable.lower():
-                append = True
-            else:
-                continue
+
+        if executable is not None and process_name.lower() != executable.lower():
+            continue
 
         if exe_path is not None:
             try:
@@ -45,10 +35,7 @@ def process_running(executeable=None, exe_path=None, cmdline=None):
             except Exception as e:
                 log.exception(e)
                 continue
-
-            if Path(process_path) == Path(exe_path):
-                append = True
-            else:
+            if Path(process_path) != Path(exe_path):
                 continue
 
         if cmdline is not None:
@@ -57,100 +44,43 @@ def process_running(executeable=None, exe_path=None, cmdline=None):
             except Exception as e:
                 log.exception(e)
                 continue
-
-            # process_cmdline = [str_decode(_cmdln).lower().replace('\\', '/').strip('/') for _cmdln in process_cmdline]
-            process_cmdline = [
+            normalized_cmdline = [
                 _cmdln.lower().replace('\\', '/').strip('/')
                 for _cmdln in process_cmdline
             ]
-            if cmdline.lower().replace('\\', '/').strip('/') in process_cmdline:
-                append = True
-            else:
+            if cmdline.lower().replace('\\', '/').strip('/') not in normalized_cmdline:
                 continue
 
-        if append:
-            output_processes.append(process)
+        output_processes.append(process)
     return output_processes
 
 
-def kill_process(executeable=None, exe_path=None, cmdline=None):
+def kill_process(executable=None, exe_path=None, cmdline=None):
     running_processes = process_running(
-        executeable=executeable, exe_path=exe_path, cmdline=cmdline
+        executable=executable, exe_path=exe_path, cmdline=cmdline
     )
     for process in running_processes:
         log.warning(f"Killing process {process.pid}")
         process.kill()
 
 
-def url_get_git_package(url: str) -> str | None:
-    """
-
-    :param url:
-    :return:
-    """
-    if 'github' in url:
-        url = re.search('(?<=github.com/)[^/]+/[^/]+', url).group(0)
-    response = httpx.get(f'https://github.com/{url}/tags.atom', timeout=30.0)
-    if response.status_code != 200:
-        log.warning(f'{url} is not a valid github url/package')
-        return None
-
-    return url
-
-
-def git_package_to_releases(package):
-    releases_url = f"https://api.github.com/repos/{package}/releases"
-    response = httpx.get(releases_url, timeout=30.0)
-    return response.json()
-
-
-def git_latest_release(releases):
-    return releases[0]
-
-
-def git_release_get_asset_url(release, asset_name) -> str | None:
-    assets = release.get('assets')
-    if assets is None:
-        log.warning(f"Couldn't get asset url for '{asset_name}'")
-        return None
-
-    matching_assets = list(
-        filter(lambda f: re.match(asset_name, f.get('name')) is not None, assets)
-    )
-    if not any(matching_assets):
-        log.warning(
-            f"There are no assets of name '{asset_name}' @ '{release.get('url')}"
-        )
-        return None
-
-    asset = matching_assets[0]
-    output = asset.get('browser_download_url')
-    log.debug(f"Returning url for asset '{asset_name}': '{output}'")
-    return output
-
-
-def url_accessible(_url):
-    try:
-        urlopen = urllib.request.urlopen(_url)
-        getcode = urlopen.getcode()
-    except Exception as e:
-        log.exception(e)
-        getcode = None
-
-    output = getcode == 200
-    log.debug(f"url '{_url}' accessible: {output}")
-    return output
-
-
 def md5sum(path):
-    if not isinstance(path, Path):
-        try:
-            Path(path).exists()
-            path = Path(path)
-        except Exception as e:
-            log.exception(e)
-            pass
+    """Calculate MD5 hash of a file or URL.
 
+    Args:
+        path: Path to file or URL string
+
+    Returns:
+        MD5 hexdigest string or None on failure
+    """
+    # Try to convert to Path if it's a string
+    if isinstance(path, str):
+        try:
+            path = Path(path)
+        except Exception:
+            pass  # Keep as string, treat as URL
+
+    # Handle URL case
     if not isinstance(path, Path):
         log.debug(f"Getting md5 of an url '{path}'")
         if not url_accessible(path):
@@ -167,6 +97,8 @@ def md5sum(path):
         temp_file_path = constants.TEMP_FOLDER / filename
         if temp_file_path.exists():
             temp_file_path.unlink()
+
+        from .downloader import download_file_from_url
 
         downloaded_file = download_file_from_url(path, temp_file_path)
         if downloaded_file is None or not downloaded_file.exists():
@@ -186,51 +118,17 @@ def md5sum(path):
         d = hashlib.md5()
         for buf in iter(partial(f.read, 128), b''):
             d.update(buf)
-    output = d.hexdigest()
-    return output
+    return d.hexdigest()
 
 
-def download_file_from_url(source, destination):
-    """Download a file from a URL to a destination path with progress bar."""
-    filename = source.split('/')[-1]
-
-    def progress_callback(blocknum, bs, size):
-        """Progress callback for urlretrieve."""
-        if size > 0:
-            downloaded = blocknum * bs
-            if downloaded > size:
-                downloaded = size
-            # Update Rich progress bar
-            log.update_download_progress(filename, downloaded, size)
-
-    try:
-        urlretrieve(source, str(destination), progress_callback)
-    except Exception as e:
-        log.error(f"Error downloading '{source}' to '{destination}'\n{type(e)} {e}")
-        return None
-
-    return Path(destination)
-
-
-def url_to_filename(url):
-    parse = urlparse(url)
-    base = os.path.basename(parse.path)
-    suffix = Path(base).suffix
-    if suffix == '':
-        log.warning(
-            f"Cannot get filename from url '{url}'. No dot in base '{parse.path}'"
-        )
-        return None
-
-    return base
-
-
-def read_url(url):
-    fp = urllib.request.urlopen(url)
-    mybytes = fp.read()
-    output = mybytes.decode("utf8").strip()
-    fp.close()
-    return output
+def _remove_existing_item(path: Path) -> None:
+    """Remove existing file or directory at path."""
+    if not path.exists():
+        return
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
 
 
 def unzip_file(source, destination, members=None, password=None, flatten=False):
@@ -244,118 +142,64 @@ def unzip_file(source, destination, members=None, password=None, flatten=False):
         flatten: If True and zip contains a single top-level directory,
                  extract files directly to destination (skip the redundant folder)
     """
-    if flatten:
-        # Extract to a temporary location first
-        import tempfile
-        import shutil as _shutil
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            with zipfile.ZipFile(str(source), 'r') as _zip:
-                log.debug(f"Flatten extracting '{source}' to temp '{temp_path}'")
-                _zip.extractall(str(temp_path), members=members, pwd=password)
-
-            # Find top-level directories and files
-            top_level_items = list(temp_path.iterdir())
-
-            # Check if there's exactly one top-level directory
-            top_level_dirs = [item for item in top_level_items if item.is_dir()]
-            top_level_files = [item for item in top_level_items if item.is_file()]
-
-            if len(top_level_dirs) == 1 and len(top_level_files) == 0:
-                # Single directory - flatten it
-                source_dir = top_level_dirs[0]
-                log.debug(
-                    f"Flattening: moving contents of '{source_dir.name}' to '{destination}'"
-                )
-                for item in source_dir.iterdir():
-                    dest_item = Path(destination) / item.name
-                    if dest_item.exists():
-                        if dest_item.is_dir():
-                            _shutil.rmtree(dest_item)
-                        else:
-                            dest_item.unlink()
-                    _shutil.move(str(item), str(dest_item))
-                # Remove the now-empty directory
-                source_dir.rmdir()
-            else:
-                # Multiple directories, files at root, or empty - use normal extraction
-                if len(top_level_dirs) > 1:
-                    log.debug(
-                        "Multiple top-level directories found, using normal extraction"
-                    )
-                elif len(top_level_files) > 0:
-                    log.warning(
-                        "flatten=True but archive has no redundant folder to remove "
-                        "(files already at root). Extracting normally."
-                    )
-                else:
-                    log.debug("Empty archive, using normal extraction")
-
-                # Copy all contents from temp_path to destination
-                for item in top_level_items:
-                    dest_item = Path(destination) / item.name
-                    if dest_item.exists():
-                        if dest_item.is_dir():
-                            _shutil.rmtree(dest_item)
-                        else:
-                            dest_item.unlink()
-                    if item.is_dir():
-                        _shutil.copytree(str(item), str(dest_item))
-                    else:
-                        _shutil.copy2(str(item), str(dest_item))
-    else:
+    if not flatten:
         with zipfile.ZipFile(str(source), 'r') as _zip:
             log.debug(f"Unzipping '{source}' to '{destination}'")
             _zip.extractall(str(destination), members=members, pwd=password)
+        return
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        with zipfile.ZipFile(str(source), 'r') as _zip:
+            log.debug(f"Flatten extracting '{source}' to temp '{temp_path}'")
+            _zip.extractall(str(temp_path), members=members, pwd=password)
+
+        # Find top-level directories and files
+        top_level_items = list(temp_path.iterdir())
+        top_level_dirs = [item for item in top_level_items if item.is_dir()]
+        top_level_files = [item for item in top_level_items if item.is_file()]
+
+        if len(top_level_dirs) == 1 and len(top_level_files) == 0:
+            # Single directory - flatten it
+            source_dir = top_level_dirs[0]
+            log.debug(
+                f"Flattening: moving contents of '{source_dir.name}' to '{destination}'"
+            )
+            for item in source_dir.iterdir():
+                dest_item = Path(destination) / item.name
+                _remove_existing_item(dest_item)
+                shutil.move(str(item), str(dest_item))
+            # Remove the now-empty directory
+            source_dir.rmdir()
+        else:
+            # Multiple directories, files at root, or empty - use normal extraction
+            if len(top_level_dirs) > 1:
+                log.debug(
+                    "Multiple top-level directories found, using normal extraction"
+                )
+            elif len(top_level_files) > 0:
+                log.warning(
+                    "flatten=True but archive has no redundant folder to remove "
+                    "(files already at root). Extracting normally."
+                )
+            else:
+                log.debug("Empty archive, using normal extraction")
+
+            # Copy all contents from temp_path to destination
+            for item in top_level_items:
+                dest_item = Path(destination) / item.name
+                _remove_existing_item(dest_item)
+                if item.is_dir():
+                    shutil.copytree(str(item), str(dest_item))
+                else:
+                    shutil.copy2(str(item), str(dest_item))
 
 
 def is_filename_archive(filename):
     archive_exts = ('.zip', '.7z', '.rar')
-    return any(ext for ext in archive_exts if ext in filename)
-
-
-def get_url_headers(url: str) -> dict | None:
-    """Make HTTP HEAD request to get file metadata without downloading.
-
-    Returns a dict with:
-    - etag: ETag header value (unique file identifier)
-    - last_modified: Last-Modified header value (timestamp)
-    - content_length: Content-Length header value (file size in bytes)
-    - None if request fails or URL is not accessible
-    """
-    try:
-        request = urllib.request.Request(url, method='HEAD')
-        # Add User-Agent to avoid being blocked by some servers
-        request.add_header('User-Agent', 'updatechecker/1.0')
-
-        with urllib.request.urlopen(request, timeout=30) as response:
-            headers = response.headers
-
-            result = {
-                'etag': headers.get('ETag'),
-                'last_modified': headers.get('Last-Modified'),
-                'content_length': headers.get('Content-Length'),
-            }
-
-            # Convert content_length to int if present
-            if result['content_length']:
-                try:
-                    result['content_length'] = int(result['content_length'])
-                except (ValueError, TypeError):
-                    result['content_length'] = None
-
-            log.debug(
-                f"HEAD request for '{url}': etag={result['etag']}, "
-                f"last_modified={result['last_modified']}, "
-                f"content_length={result['content_length']}"
-            )
-
-            return result
-
-    except Exception as e:
-        log.warning(f"HEAD request failed for '{url}': {type(e).__name__} {e}")
-        return None
+    return any(ext for ext in archive_exts if ext in filename) or zipfile.is_zipfile(
+        str(filename)
+    )
 
 
 def get_metadata_path(target_path: Path | str) -> Path:
@@ -451,7 +295,9 @@ def load_metadata(target_path: Path | str) -> dict | None:
         return None
 
 
-def file_needs_update(url: str, target_path: Path | str) -> bool | None:
+def file_needs_update(
+    url: str, target_path: Path | str, use_content_length_check: bool = True
+) -> bool | None:
     """Check if a remote file has changed since last download.
 
     Uses HTTP HEAD request to get current headers and compares with
@@ -460,6 +306,8 @@ def file_needs_update(url: str, target_path: Path | str) -> bool | None:
     Args:
         url: URL of the remote file
         target_path: Path to the locally cached file
+        use_content_length_check: If True and metadata is missing but file exists,
+                                  use Content-Length comparison to avoid re-download
 
     Returns:
         True if file needs update, False if unchanged, None if check failed
@@ -476,8 +324,41 @@ def file_needs_update(url: str, target_path: Path | str) -> bool | None:
     # Load cached metadata
     cached = load_metadata(target_path)
     if cached is None:
-        log.debug("No cached metadata - needs update")
-        return True
+        # No cached metadata - check if we should use Content-Length comparison
+        if use_content_length_check:
+            log.debug("No cached metadata - attempting Content-Length comparison")
+
+            current = get_url_headers(url)
+
+            if current is None:
+                log.debug("HEAD request failed - can't determine if update needed")
+                return None  # Fall back to MD5 comparison
+
+            content_length = current.get('content_length')
+            if content_length is None:
+                log.debug(
+                    "No Content-Length in headers - can't determine if update needed"
+                )
+                return None  # Fall back to MD5 comparison
+
+            local_size = target.stat().st_size
+            if local_size == content_length:
+                log.debug(
+                    f"Content-Length matches local file {target_path} size ({content_length} bytes) - no update needed"
+                )
+                # Save new metadata since we confirmed the file is current
+                save_metadata(target_path, current, url)
+                return False
+            else:
+                log.debug(
+                    f"Content-Length differs: local={local_size}, remote={content_length} - needs update"
+                )
+                return True
+        else:
+            log.debug(
+                "No cached metadata - needs update (Content-Length check disabled)"
+            )
+            return True
 
     # Verify URL matches (to handle redirects)
     if cached.get('url') != url:
@@ -508,28 +389,30 @@ def file_needs_update(url: str, target_path: Path | str) -> bool | None:
             return False
 
     # 2. Check Last-Modified
-    if current.get('last_modified') and cached.get('last_modified'):
-        if current['last_modified'] != cached['last_modified']:
+    if (current_l_m := current.get('last_modified')) and (
+        cached_l_m := cached.get('last_modified')
+    ):
+        if current_l_m != cached_l_m:
             log.debug(
-                f"Last-Modified changed: '{cached['last_modified']}' -> '{current['last_modified']}' - needs update"
+                f"Last-Modified changed: '{cached_l_m}' -> '{current_l_m}' - needs update"
             )
             return True
         else:
-            log.debug(
-                f"Last-Modified unchanged: '{current['last_modified']}' - no update needed"
-            )
+            log.debug(f"Last-Modified unchanged: '{current_l_m}' - no update needed")
             return False
 
     # 3. Check Content-Length (file size)
-    if current.get('content_length') and cached.get('content_length'):
-        if current['content_length'] != cached['content_length']:
+    if (current_cont_len := current.get('content_length')) and (
+        cached_cont_len := cached.get('content_length')
+    ):
+        if current_cont_len != cached_cont_len:
             log.debug(
-                f"Content-Length changed: {cached['content_length']} -> {current['content_length']} - needs update"
+                f"Content-Length changed: {cached_cont_len} -> {current_cont_len} - needs update"
             )
             return True
         else:
             log.debug(
-                f"Content-Length unchanged: {current['content_length']} - no update needed"
+                f"Content-Length unchanged: {current_cont_len} - no update needed"
             )
             return False
 

@@ -1,14 +1,31 @@
 import os
 import pprint
 import shutil
-import logging
-from concurrent.futures.thread import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-import psutil as psutil
-from . import constants, common_tools as tools
-from .config import config, Entry, substitute_variables
 
-log = logging.getLogger(__name__)
+import psutil
+
+from . import common_tools as tools, downloader
+from . import constants
+from .config import (
+    Config,
+    Entry,
+    config_filename,
+    expand_env_variables,
+    substitute_variables,
+)
+from .logger import log
+
+
+def get_default_config_path() -> Path:
+    """Get the default config path: ~/updatechecker.yaml"""
+    local_config = constants.ROOT_FOLDER / config_filename
+    if local_config.exists():
+        return Path(local_config)
+
+    home_dir = os.getenv('USERPROFILE', os.getenv('HOME', '~')).replace('\\', '/')
+    return Path(f"{home_dir}/{config_filename}")
 
 
 def prepare_entry(entry_dict: dict, name: str, variables: dict) -> Entry:
@@ -18,15 +35,15 @@ def prepare_entry(entry_dict: dict, name: str, variables: dict) -> Entry:
     # Get entry-specific variables and merge with global variables
     # Entry-specific variables take priority over global variables
     entry_vars = entry.pop('variables', {}) or {}
-    # First expand environment variables in entry-specific variables
-    from .config import expand_env_variables
 
+    # Expand environment variables in entry-specific variables
     for key, value in entry_vars.items():
         entry_vars[key] = expand_env_variables(value)
-    # Then expand config variable references in entry-specific variables
-    # (entry vars can reference global vars)
+
+    # Expand config variable references in entry-specific variables
     for key, value in entry_vars.items():
         entry_vars[key] = substitute_variables(value, variables)
+
     # Merge: global variables first, then entry-specific override them
     merged_variables = {**variables, **entry_vars}
 
@@ -41,8 +58,15 @@ def prepare_entry(entry_dict: dict, name: str, variables: dict) -> Entry:
     return Entry(**entry, name=name)
 
 
-def process_entry(entry):
-    log.info(f"Processing entry '{entry.name}'")
+def process_entry(entry, force: bool = False, gh_token: str | None = None):
+    """Process a single entry for update checking.
+
+    Args:
+        entry: Entry to process
+        force: Force re-download, skip HEAD/MD5 checks
+        gh_token: GitHub token for API requests
+    """
+    log.debug(f"Processing entry '{entry.name}'")
     log.debug(f"{pprint.pformat(entry.model_dump())}")
     url = entry.url
     url_md5 = entry.md5
@@ -59,16 +83,24 @@ def process_entry(entry):
 
     if git_asset is not None:
         log.debug(f"Trying git package for git asset {git_asset}")
-        git_package = tools.url_get_git_package(url)
+        git_package = downloader.url_get_git_package(url)
         if git_package is None:
             log.warning("Url is not for a file and not a git package. Cannot proceed")
             return
 
-        releases = tools.git_package_to_releases(git_package)
-        release = tools.git_latest_release(releases)
-        url = tools.git_release_get_asset_url(release, git_asset)
+        releases = downloader.git_package_to_releases(git_package, gh_token)
+        if releases is None:
+            log.warning("No releases found for git package. Cannot proceed")
+            return
 
-    url_file = tools.url_to_filename(url)
+        release = downloader.git_latest_release(releases)
+        if release is None:
+            log.warning("No releases found for git package. Cannot proceed")
+            return
+
+        url = downloader.git_release_get_asset_url(release, git_asset)
+
+    url_file = downloader.url_to_filename(url)
     if url_file is None:
         log.warning(f"Url '{url}' is not for a file.")
         return
@@ -78,12 +110,20 @@ def process_entry(entry):
     if target.is_dir():
         entry.target = target = target / url_file
 
-    # Check if file needs update using HEAD request (skip if already up to date)
-    needs_update = tools.file_needs_update(url, target)
+    # Check if file needs update - skip if force is True
+    if force:
+        needs_update = True
+        log.info(f"Force mode: will re-download '{target}'")
+    else:
+        needs_update = tools.file_needs_update(
+            url, target, use_content_length_check=entry.use_content_length_check
+        )
 
     if not target.exists():
         log.debug(f"Target '{target}' doesn't exist. Just downloading url")
-        tools.download_file_from_url(url, target)
+        downloader.download_file_from_url(
+            url, target, chunked_download=entry.chunked_download
+        )
         tools.update_file_metadata(url, target)
         process_archive(entry)
         if launch:
@@ -92,7 +132,7 @@ def process_entry(entry):
 
     # If HEAD check determined file doesn't need update, skip download
     if needs_update is False:
-        log.info(f"No need to update '{target}' (HEAD check: file unchanged)")
+        log.debug(f"No need to update '{target}' (HEAD check: file unchanged)")
         return
 
     target_md5 = tools.md5sum(target)
@@ -105,13 +145,17 @@ def process_entry(entry):
     del_temp()
 
     # If HEAD check failed or returned None, fall back to MD5 comparison
-    if needs_update is None:
-        log.debug("HEAD check failed, falling back to MD5 comparison")
+    # Skip if force is True
+    if force or needs_update is None:
+        if force:
+            log.debug("Force mode: skipping MD5 comparison, downloading directly")
+        else:
+            log.debug("HEAD check failed, falling back to MD5 comparison")
         if url_md5 is None:
-            tools.download_file_from_url(url, temp_file)
+            downloader.download_file_from_url(url, temp_file)
             url_md5 = tools.md5sum(temp_file)
         else:
-            url_md5 = tools.read_url(url_md5)
+            url_md5 = downloader.read_url(url_md5)
             url_md5 = url_md5.split(' ')[0]
 
         if target_md5 == url_md5:
@@ -125,7 +169,7 @@ def process_entry(entry):
     else:
         # HEAD check returned True - need to update, but use MD5 if available
         if url_md5 is not None:
-            url_md5 = tools.read_url(url_md5)
+            url_md5 = downloader.read_url(url_md5)
             url_md5 = url_md5.split(' ')[0]
             if target_md5 == url_md5:
                 log.info(
@@ -159,7 +203,9 @@ def process_entry(entry):
         shutil.move(str(temp_file), str(target))
         del_temp()
     else:
-        tools.download_file_from_url(url, target)
+        downloader.download_file_from_url(
+            url, target, chunked_download=entry.chunked_download
+        )
 
     # Update metadata after successful download
     tools.update_file_metadata(url, target)
@@ -170,8 +216,7 @@ def process_entry(entry):
 
     if killed:
         if relaunch is True and kill_if_locked is not None:
-            _cmd = f"{kill_if_locked} {arguments or ''}"
-            os.system(kill_if_locked)
+            _launch(kill_if_locked, arguments)
     elif launch:
         _launch(launch, arguments)
 
@@ -206,26 +251,63 @@ def process_archive(entry):
                 return
 
 
-def main(_async=True, threads=None):
-    from .config import _get_variables
+def updatechecker(
+    config_path: str | Path | None = None,
+    _async: bool = True,
+    threads: int | None = None,
+    entries: list[str] | None = None,
+    force: bool = False,
+    gh_token: str | None = None,
+):
+    """Main function with CLI parameters.
 
-    variables = _get_variables()
+    Args:
+        config_path: Path to the config file. If None, uses default ~/updatechecker.yaml
+        _async: Enable parallel processing (default: True)
+        threads: Number of threads for parallel processing (default: CPU count - 1)
+        entries: List of entry names to check (default: all)
+        force: Force re-download, skip HEAD/MD5 checks
+        gh_token: GitHub token for API requests (overrides config and env var)
+    """
+    # Use provided path or default
+    if config_path is None:
+        config_path = get_default_config_path()
+
+    # Create Config instance
+    config = Config(config_path)
+    log.debug(f"Config path: {config_path}")
+
+    # Resolve GitHub token: CLI arg > config > env var
+    resolved_gh_token = gh_token or config.github_token or os.getenv('GITHUB_TOKEN')
+    log.debug(
+        f"GH Token resolved: {'provided' if resolved_gh_token else 'not provided'}"
+    )
+
+    # Get variables from config
+    variables = config.get_variables()
+
     config_entries = [
         prepare_entry(config_entry, config_entry_name, variables)
         for config_entry_name, config_entry in config.entries.items()
     ]
+
+    # Filter entries if specified
+    if entries:
+        entry_names_set = set(entries)
+        config_entries = [e for e in config_entries if e.name in entry_names_set]
+        if not config_entries:
+            log.warning(f"No matching entries found for: {entries}")
+            return
+
     if _async:
         threads = threads or psutil.cpu_count() - 1
         with ThreadPoolExecutor(max_workers=threads) as executor:
-            executor.map(process_entry, config_entries)
+            # Pass force flag and gh_token to each entry processing
+            list(
+                executor.map(
+                    lambda e: process_entry(e, force, resolved_gh_token), config_entries
+                )
+            )
     else:
         for entry in config_entries:
-            process_entry(entry)
-
-
-if __name__ == '__main__':
-    log.verbose = True
-    _async = os.getenv('update_checker_dbg', None) is None
-    log.debug(f"Async: {_async}")
-    main(_async=_async)
-    pass
+            process_entry(entry, force, resolved_gh_token)

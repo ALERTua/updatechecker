@@ -11,6 +11,7 @@ dependencies = [
     "pydantic",
     "pyyaml",
     "rich",
+    "typer",
 ]
 
 [dependency-groups]
@@ -21,11 +22,12 @@ dev = [
     "ruff",
     "rust-just",
 ]
+
 [tool.uv]
 package = true
 
 [project.scripts]
-updatechecker = "updatechecker.__main__:main"
+updatechecker = "updatechecker.cli:cli"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -74,3 +76,6 @@ addopts = ["-ra", "-q", "-m", "not integration"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 markers = ["integration: marks tests as integration tests (deselect with '-m \"not integration\"')"]
+
+[tool.black]
+line-length = 120

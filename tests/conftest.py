@@ -24,15 +24,11 @@ def example_config_path():
 
 @pytest.fixture
 def test_config(example_config_path):
-    """Provide a Dynaconf config instance loaded from updatechecker.example.yaml.
+    """Provide a Config instance loaded from updatechecker.example.yaml.
 
-    This fixture instantiates a new config object using the example yaml file,
+    This fixture instantiates a new Config object using the example yaml file,
     ensuring tests have a consistent and isolated config for testing.
     """
-    from updatechecker.config import Dynaconf, config_kwargs
+    from updatechecker.config import Config
 
-    return Dynaconf(
-        root_path=example_config_path.parent,
-        settings_files=[example_config_path],
-        **config_kwargs,
-    )
+    return Config(example_config_path)
