@@ -150,7 +150,7 @@ def download_file_from_url(source, destination, chunked_download: bool | None = 
         source: URL to download from
         destination: Path to save the file
         chunked_download: Whether to use chunked parallel download.
-                         None = auto-detect based on file size (>= 20MB)
+                         None = auto-detect based on file size (>= 10MB)
                          True = force chunked download
                          False = never use chunked download
 
