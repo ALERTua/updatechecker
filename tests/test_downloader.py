@@ -11,7 +11,9 @@ from updatechecker.constants import DEFAULT_CHUNK_SIZE
 from updatechecker.downloader import (
     calculate_chunks,
     check_server_ranges,
+    combine_chunks,
     get_file_size,
+    _cleanup_chunk_files,
 )
 
 
@@ -159,3 +161,74 @@ def temp_unzip_dir():
     """Create a temporary directory for extraction."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir)
+
+
+class TestChunkFileCleanup:
+    """Test cleanup of temporary chunk files."""
+
+    def test_cleanup_chunk_files_removes_existing_files(self, temp_download_dir):
+        """Test that cleanup removes existing chunk files."""
+        # Create temporary chunk files
+        chunk1 = temp_download_dir / "chunk_1234567890_0001"
+        chunk2 = temp_download_dir / "chunk_1234567890_0002"
+        chunk1.write_bytes(b"chunk1 content")
+        chunk2.write_bytes(b"chunk2 content")
+
+        # Verify files exist
+        assert chunk1.exists()
+        assert chunk2.exists()
+
+        # Clean up
+        _cleanup_chunk_files([chunk1, chunk2])
+
+        # Verify files are removed
+        assert not chunk1.exists()
+        assert not chunk2.exists()
+
+    def test_cleanup_chunk_files_handles_missing_files(self, temp_download_dir):
+        """Test that cleanup handles missing files gracefully."""
+        # Non-existent files
+        chunk1 = temp_download_dir / "nonexistent_chunk_1"
+        chunk2 = temp_download_dir / "nonexistent_chunk_2"
+
+        # Should not raise an exception
+        _cleanup_chunk_files([chunk1, chunk2])
+
+    def test_cleanup_chunk_files_handles_partial_files(self, temp_download_dir):
+        """Test cleanup when some files exist and some don't."""
+        # Create only one file
+        chunk1 = temp_download_dir / "chunk_1234567890_0001"
+        chunk2 = temp_download_dir / "chunk_1234567890_0002"
+        chunk1.write_bytes(b"chunk1 content")
+
+        # Verify only chunk1 exists
+        assert chunk1.exists()
+        assert not chunk2.exists()
+
+        # Clean up both - should handle missing file gracefully
+        _cleanup_chunk_files([chunk1, chunk2])
+
+        # Verify chunk1 is removed
+        assert not chunk1.exists()
+
+    def test_combine_chunks_removes_chunk_files(self, temp_download_dir):
+        """Test that combine_chunks removes chunk files after combining."""
+        # Create temporary chunk files
+        chunk1 = temp_download_dir / "chunk_1234567890_0001"
+        chunk2 = temp_download_dir / "chunk_1234567890_0002"
+        chunk1.write_bytes(b"first half")
+        chunk2.write_bytes(b"second half")
+
+        destination = temp_download_dir / "combined_file.txt"
+
+        # Combine chunks
+        result = combine_chunks([chunk1, chunk2], destination)
+
+        # Verify destination exists and has correct content
+        assert result == destination
+        assert destination.exists()
+        assert destination.read_bytes() == b"first halfsecond half"
+
+        # Verify chunk files are removed
+        assert not chunk1.exists()
+        assert not chunk2.exists()

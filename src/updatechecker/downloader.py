@@ -103,6 +103,13 @@ def combine_chunks(chunk_files: list[Path], destination: Path) -> Path:
             with open(chunk_file, 'rb') as inp:
                 out.write(inp.read())
 
+    # Clean up chunk files after combining
+    for chunk_file in chunk_files:
+        try:
+            chunk_file.unlink(missing_ok=True)
+        except Exception as e:
+            log.debug(f"Failed to clean up chunk file {chunk_file}: {e}")
+
     return destination
 
 
@@ -277,6 +284,19 @@ def _download_single(
     return destination
 
 
+def _cleanup_chunk_files(chunk_files: list[Path]) -> None:
+    """Clean up chunk files, ignoring any errors.
+
+    Args:
+        chunk_files: List of chunk file paths to delete
+    """
+    for chunk_file in chunk_files:
+        try:
+            chunk_file.unlink(missing_ok=True)
+        except Exception as e:
+            log.debug(f"Failed to clean up chunk file {chunk_file}: {e}")
+
+
 def _download_parallel(
     url: str,
     destination: Path,
@@ -332,6 +352,8 @@ def _download_parallel(
                 log.error(f"Chunk {chunk_idx} failed: {e}")
                 # Fall back to single connection
                 log.warning("Falling back to single connection download")
+                # Clean up already downloaded chunk files before falling back
+                _cleanup_chunk_files(chunk_files)
                 return _download_single(url, destination, filename, progress_callback)
 
     # Combine chunks after all downloads complete
