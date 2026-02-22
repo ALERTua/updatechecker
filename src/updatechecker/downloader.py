@@ -103,11 +103,7 @@ def combine_chunks(chunk_files: list[Path], destination: Path) -> Path:
                 out.write(inp.read())
 
     # Clean up chunk files after combining
-    for chunk_file in chunk_files:
-        try:
-            chunk_file.unlink(missing_ok=True)
-        except Exception as e:
-            log.debug(f"Failed to clean up chunk file {chunk_file}: {e}")
+    _cleanup_chunk_files(chunk_files)
 
     return destination
 
