@@ -119,6 +119,9 @@
 # =============================================================================
 # EXAMPLE CONFIG
 # =============================================================================
+github_token: 'ghp_abc123'  # optional, used for private repos or rate limiting
+
+
 variables:
   games_dir: 'D:\Games'
   gw2_dir: '{{games_dir}}\GW2'
@@ -126,6 +129,7 @@ variables:
   progs: 'D:\Progs'
   # Environment variable in variable value - useful for portable configs
   user_home: '%USERPROFILE%'
+
 
 entries:
 
@@ -138,6 +142,7 @@ entries:
     md5: "https://www.md5.file/uri"  # uri that contains an md5 hash for the downloaded file
     # notice paths are surrounded with single quotes while URL and other strings - with double quotes
     target: '{{drive_root}}\file.zip'  # full file directory path or full file path to download the file to
+    chunked_download: true  # download the file in chunks. default: true
     unzip_target: '{{drive_root}}'  # if the file is an archive - unzip it to target
     archive_password: "archive password"
     kill_if_locked: '%SYSTEMROOT%\explorer.exe'  # kill this process full path or name, if the target is locked while downloading or unzipping
@@ -171,3 +176,20 @@ entries:
     target: '{{games_dir}}\D2RMM.zip'
     unzip_target: '{{games_dir}}\D2RMM'
     flatten: true
+
+# -----------------------------------------------------------------------------
+# RULE 8: Content-Length Check - use_content_length_check
+# -----------------------------------------------------------------------------
+# When metadata JSON is missing but the file exists locally, you can choose
+# whether to compare Content-Length (file size) to avoid re-downloading.
+#
+# - true (default): Compare local file size with server Content-Length.
+#                   If they match, assume the file is unchanged and save new metadata.
+#                   This saves bandwidth but could have false positives for same-size files.
+# - false: Always re-download if metadata is missing (safer but wasteful).
+#
+# Example:
+#   my_entry:
+#     url: "https://example.com/file.zip"
+#     target: 'C:\Files\file.zip'
+#     use_content_length_check: false  # Disable for this entry

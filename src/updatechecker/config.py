@@ -1,36 +1,37 @@
 import os
 import re
-import yaml
 from pathlib import Path
-
-from typing import Optional, Union
-from pydantic import BaseModel, field_validator, model_validator
-from dynaconf import Dynaconf, Validator, ValidationError
 from urllib.parse import urlparse
+
+import yaml
+from pydantic import BaseModel, field_validator, model_validator
 
 config_dirname = 'updatechecker'
 config_filename = f'{config_dirname}.yaml'
-default_config_dir = f"{os.getenv('USERPROFILE', '~')}".replace('\\', '/')
-default_config_filepath = f"{default_config_dir}/{config_filename}"
 
-if not os.path.exists(default_config_dir):
-    os.makedirs(default_config_dir)
+# Pattern to match {{variable_name}}
+VARIABLE_PATTERN = re.compile(r'\{\{(\w+)\}\}')
+
+# Pattern to match %ENV_VAR%
+ENV_PATTERN = re.compile(r'%(\w+)%')
 
 
 class Entry(BaseModel):
     name: str
     url: str
-    md5: Optional[str] = None
+    md5: str | None = None
     target: str
-    git_asset: Optional[str] = None
-    unzip_target: Optional[str] = None
-    kill_if_locked: Optional[Union[str, bool]] = False
-    relaunch: Optional[bool] = False
-    launch: Optional[str] = None
-    arguments: Optional[str] = None
-    archive_password: Optional[str] = None
-    variables: Optional[dict] = None
-    flatten: Optional[bool] = False
+    git_asset: str | None = None
+    unzip_target: str | None = None
+    kill_if_locked: str | bool | None = False
+    relaunch: bool | None = False
+    launch: str | None = None
+    arguments: str | None = None
+    archive_password: str | None = None
+    variables: dict | None = None
+    flatten: bool | None = False
+    chunked_download: bool | None = None  # None = auto, True = force, False = never
+    use_content_length_check: bool | None = True
 
     @field_validator('unzip_target')
     def validate_unzip_target(cls, v: str):
@@ -72,13 +73,6 @@ class Variables(BaseModel):
         return v
 
 
-# Pattern to match {{variable_name}}
-VARIABLE_PATTERN = re.compile(r'\{\{(\w+)\}\}')
-
-# Pattern to match %ENV_VAR%
-ENV_PATTERN = re.compile(r'%(\w+)%')
-
-
 def expand_env_variables(text: str) -> str:
     """
     Expand %ENV_VAR% placeholders in text with values from environment variables.
@@ -106,7 +100,9 @@ def expand_env_variables(text: str) -> str:
     return ENV_PATTERN.sub(replace_env_var, text)
 
 
-def substitute_variables(text: str, variables: dict) -> str:
+def substitute_variables(
+    text: str, variables: dict, error_context: str = 'path'
+) -> str:
     """
     Substitute {{variable_name}} placeholders in text with values from variables dict.
     Also expands %ENV_VAR% placeholders from environment variables.
@@ -114,6 +110,7 @@ def substitute_variables(text: str, variables: dict) -> str:
     Args:
         text: String containing {{variable_name}} placeholders
         variables: Dictionary mapping variable names to their values
+        error_context: Context string for error messages (e.g., entry name)
 
     Returns:
         String with all placeholders substituted
@@ -127,10 +124,15 @@ def substitute_variables(text: str, variables: dict) -> str:
     # First expand environment variables
     text = expand_env_variables(text)
 
+    if not VARIABLE_PATTERN.search(text):
+        return text
+
     def replace_var(match):
         var_name = match.group(1)
         if var_name not in variables:
-            raise ValueError(f"Undefined variable: '{var_name}' referenced in path")
+            raise ValueError(
+                f"Undefined variable: '{var_name}' referenced in {error_context}"
+            )
         return variables[var_name]
 
     return VARIABLE_PATTERN.sub(replace_var, text)
@@ -141,196 +143,196 @@ def entry_validator(entries, variables=None):
     if variables is None:
         variables = {}
 
-    # Path fields that should have variable substitution
     path_fields = ['target', 'unzip_target', 'kill_if_locked', 'launch', 'arguments']
 
-    for entry_name in entries.keys():
-        entry = entries[entry_name].copy()
-
-        # Get entry-specific variables if present
+    for entry_name, entry_data in entries.items():
+        entry = entry_data.copy()
         entry_vars = entry.pop('variables', None) or {}
 
-        # First expand environment variables in entry-specific variables
-        expanded_entry_vars = {}
-        for key, value in entry_vars.items():
-            expanded_entry_vars[key] = expand_env_variables(value)
+        # Expand environment variables in entry-specific variables
+        expanded_entry_vars = {
+            k: expand_env_variables(v) for k, v in entry_vars.items()
+        }
 
-        # Then expand chained config variables in entry-specific variables
-        # (can reference other entry-specific variables or main variables)
+        # Expand variable references in entry-specific variables iteratively
         max_iterations = 10
-        for key in list(expanded_entry_vars.keys()):
+        for key in expanded_entry_vars:
             value = expanded_entry_vars[key]
+            # Merge global vars with entry vars for resolution (entry vars take priority)
+            merged_for_resolution = {**variables, **expanded_entry_vars}
             for _ in range(max_iterations):
-                if not VARIABLE_PATTERN.search(value):
-                    break
-
-                def replace_var(match):
-                    var_name = match.group(1)
-                    # Check entry-specific vars first, then main variables
-                    if var_name in expanded_entry_vars:
-                        return expanded_entry_vars[var_name]
-                    if var_name in variables:
-                        return variables[var_name]
-                    raise ValueError(
-                        f"Undefined variable: '{var_name}' referenced in entry '{entry_name}'"
-                    )
-
-                new_value = VARIABLE_PATTERN.sub(replace_var, value)
+                new_value = substitute_variables(
+                    value, merged_for_resolution, f"entry '{entry_name}'"
+                )
                 if new_value == value:
                     break
                 value = new_value
             expanded_entry_vars[key] = value
 
-        # Merge main variables with entry-specific variables (entry vars take priority)
-        merged_variables = {**variables, **expanded_entry_vars}
+        # Merge variables (entry-specific take priority)
+        merged = {**variables, **expanded_entry_vars}
 
         # Substitute variables in path fields
         for field in path_fields:
             if field in entry and entry[field]:
-                entry[field] = substitute_variables(entry[field], merged_variables)
+                entry[field] = substitute_variables(entry[field], merged)
 
         Entry(**entry, name=entry_name)
 
     return True
 
 
-fresh_vars = [
-    "entries",
-    "variables",
-]
+class Config:
+    """Configuration class that loads and manages config from a YAML file.
 
-defaults = {"entries": [], "variables": {}}
+    This class provides a cleaner API for loading and accessing configuration
+    from a specific YAML file path. It reads YAML directly without relying
+    on Dynaconf validators.
+    """
+
+    def __init__(self, config_path: str | Path):
+        """Initialize Config with a specific config file path.
+
+        Args:
+            config_path: Path to the YAML config file.
+        """
+        self._config_path = Path(config_path)
+        self._yaml_data = self._read_yaml_data()
+
+    def _read_yaml_data(self) -> dict:
+        """Read YAML data directly from config file.
+
+        Returns the full YAML data dict, or empty dict if file not found.
+        """
+        if self._config_path.exists():
+            try:
+                with open(self._config_path, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f)
+                    return data or {}
+            except Exception:
+                pass
+        return {}
+
+    @property
+    def entries(self) -> dict:
+        """Get entries from config."""
+        return self._yaml_data.get('entries') or {}
+
+    @property
+    def variables(self) -> dict:
+        """Get raw variables from config."""
+        return self._yaml_data.get('variables') or {}
+
+    @property
+    def github_token(self) -> str | None:
+        """Get github_token from config."""
+        return self._yaml_data.get("github_token")
+
+    def get_variables(self) -> dict:
+        """Get variables with expansion of environment variables and chained variables.
+
+        Returns:
+            Dictionary of resolved variables.
+        """
+        variables = self._yaml_data.get('variables') or {}
+
+        # Expand environment variables first
+        expanded = {k: expand_env_variables(v) for k, v in variables.items()}
+
+        # Resolve variable references iteratively (in order for forward references)
+        resolved = {}
+        max_iterations = 10  # Prevent infinite loops
+
+        for key, value in expanded.items():
+            for _ in range(max_iterations):
+                new_value = substitute_variables(value, resolved, 'variables')
+                if new_value == value:
+                    break
+                value = new_value
+            resolved[key] = value
+
+        return resolved
+
+    def validate(self) -> None:
+        """Validate the configuration.
+
+        This validates entries and variables structure without requiring
+        all paths to exist (which depends on the runtime environment).
+        """
+        entries = self.entries
+        variables = self.get_variables()
+        entry_validator(entries, variables)
+
+    def __repr__(self) -> str:
+        return f"Config(path='{self._config_path}')"
+
+
+# Keep these for backward compatibility with tests that use them directly
+# These functions read from the default config locations (current dir and home dir)
+
+
+def _get_default_config_paths():
+    """Get list of default config file paths to search."""
+    home_dir = os.getenv('USERPROFILE', '~').replace('\\', '/')
+    return [
+        f"./{config_filename}",
+        f"{home_dir}/{config_filename}",
+    ]
+
+
+def _read_yaml_data() -> dict:
+    """Read YAML data from default config locations.
+
+    Returns the full YAML data dict from the first config file found,
+    or empty dict if no file found.
+    """
+    for config_file in _get_default_config_paths():
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f)
+                    return data or {}
+            except Exception:
+                pass
+    return {}
 
 
 def _read_yaml_variables() -> dict:
-    """Read variables directly from YAML file to avoid triggering Dynaconf setup.
-    This prevents infinite recursion during validation."""
-    # Try local file first, then default config directory
-    config_files = [
-        f"./{config_filename}",
-        default_config_filepath,
-    ]
-
-    for config_file in config_files:
-        if os.path.exists(config_file):
-            try:
-                with open(config_file, 'r', encoding='utf-8') as f:
-                    data = yaml.safe_load(f)
-                    if data and 'variables' in data:
-                        return data['variables'] or {}
-            except Exception:
-                pass
-    return {}
+    """Read variables from default config locations."""
+    return _read_yaml_data().get('variables') or {}
 
 
 def _read_yaml_entries() -> dict:
-    """Read entries directly from YAML file to avoid triggering Dynaconf setup.
-    This prevents infinite recursion during validation."""
-    # Try local file first, then default config directory
-    config_files = [
-        f"./{config_filename}",
-        default_config_filepath,
-    ]
-
-    for config_file in config_files:
-        if os.path.exists(config_file):
-            try:
-                with open(config_file, 'r', encoding='utf-8') as f:
-                    data = yaml.safe_load(f)
-                    if data and 'entries' in data:
-                        return data['entries'] or {}
-            except Exception:
-                pass
-    return {}
+    """Read entries from default config locations."""
+    return _read_yaml_data().get('entries') or {}
 
 
 def _get_variables() -> dict:
     """Get variables from config, return empty dict if not set.
+
     Expands environment variables and chained config variables in variable values.
-    Variables are processed in order, so later variables can reference earlier ones."""
-    # Read raw YAML to avoid triggering Dynaconf validation
+    Variables are processed in order, so later variables can reference earlier ones.
+    """
     variables = _read_yaml_variables() or {}
 
-    # First expand environment variables in all values
-    expanded_variables = {}
-    for key, value in variables.items():
-        expanded_variables[key] = expand_env_variables(value)
+    # Expand environment variables first
+    expanded = {k: expand_env_variables(v) for k, v in variables.items()}
 
-    # Then iteratively expand config variable references until no more substitutions
-    # Process in order so variables can reference previously defined ones
-    final_variables = {}
+    # Resolve variable references iteratively (in order for forward references)
+    resolved = {}
     max_iterations = 10  # Prevent infinite loops
-    for key in list(expanded_variables.keys()):
-        value = expanded_variables[key]
+
+    for key, value in expanded.items():
         for _ in range(max_iterations):
-            # Check if there are any variable references left
-            if not VARIABLE_PATTERN.search(value):
-                break
-
-            # Try to substitute
-            def replace_var(match):
-                var_name = match.group(1)
-                if var_name not in final_variables:
-                    raise ValueError(
-                        f"Undefined variable: '{var_name}' referenced in '{key}'"
-                    )
-                return final_variables[var_name]
-
-            new_value = VARIABLE_PATTERN.sub(replace_var, value)
+            new_value = substitute_variables(value, resolved, 'variables')
             if new_value == value:
-                break  # No more changes
+                break
             value = new_value
-        final_variables[key] = value
+        resolved[key] = value
 
-    return final_variables
+    return resolved
 
 
 def _validate_entries_with_variables(value=None):
-    """Validate entries with variable substitution."""
-    # Read entries from YAML directly to avoid triggering Dynaconf setup
+    """Legacy function - for backward compatibility."""
     return entry_validator(_read_yaml_entries(), _get_variables())
-
-
-validators = [
-    Validator("entries", must_exist=True, env='updatechecker'),
-    Validator('entries', is_type_of=dict, env='updatechecker'),
-    Validator(
-        "entries", condition=_validate_entries_with_variables, env='updatechecker'
-    ),
-    Validator("variables", is_type_of=dict, default={}, env='updatechecker'),
-]
-config_kwargs = dict(
-    env='updatechecker',
-    load_dotenv=False,
-    apply_default_on_none=True,
-    auto_cast=True,
-    lowercase_read=True,
-    # root_path=default_config_dir,
-    yaml_loader='safe_load',
-    core_loaders=['YAML'],
-    defaults=defaults,
-    dotted_lookup=False,
-    fresh_vars=fresh_vars,
-    # settings_files=[
-    #     default_config_filepath,
-    #     f"./{config_filename}",
-    # ],
-    validators=validators,
-)
-config = Dynaconf(
-    root_path=default_config_dir,
-    settings_files=[
-        default_config_filepath,
-        f"./{config_filename}",
-    ],
-    **config_kwargs,
-)
-
-
-if __name__ == '__main__':
-    try:
-        config.validators.validate_all()
-    except ValidationError as e:
-        accumulative_errors = e.details
-        print(accumulative_errors)
-    pass
