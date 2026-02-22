@@ -158,7 +158,7 @@ def process_entry(entry, force: bool = False, gh_token: str | None = None):
             url_md5 = downloader.read_url(url_md5)
             url_md5 = url_md5.split(' ')[0]
 
-        if target_md5 == url_md5:
+        if not force and target_md5 == url_md5:
             log.info(f"No need to update '{target}' (MD5 check)")
             # Update metadata after confirming no update needed
             tools.update_file_metadata(url, target)
