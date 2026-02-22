@@ -32,3 +32,5 @@ jobs:
 
       - name: Pre-commit on all files
         run: uv run pre-commit run --all-files
+        env:
+          USERPROFILE: ${{ github.workspace }}
