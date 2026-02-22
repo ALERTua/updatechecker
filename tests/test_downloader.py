@@ -169,8 +169,8 @@ class TestChunkFileCleanup:
     def test_cleanup_chunk_files_removes_existing_files(self, temp_download_dir):
         """Test that cleanup removes existing chunk files."""
         # Create temporary chunk files
-        chunk1 = temp_download_dir / "chunk_1234567890_0001"
-        chunk2 = temp_download_dir / "chunk_1234567890_0002"
+        chunk1 = temp_download_dir / "chunk_0001"
+        chunk2 = temp_download_dir / "chunk_0002"
         chunk1.write_bytes(b"chunk1 content")
         chunk2.write_bytes(b"chunk2 content")
 
@@ -197,8 +197,8 @@ class TestChunkFileCleanup:
     def test_cleanup_chunk_files_handles_partial_files(self, temp_download_dir):
         """Test cleanup when some files exist and some don't."""
         # Create only one file
-        chunk1 = temp_download_dir / "chunk_1234567890_0001"
-        chunk2 = temp_download_dir / "chunk_1234567890_0002"
+        chunk1 = temp_download_dir / "chunk_0001"
+        chunk2 = temp_download_dir / "chunk_0002"
         chunk1.write_bytes(b"chunk1 content")
 
         # Verify only chunk1 exists
@@ -214,8 +214,8 @@ class TestChunkFileCleanup:
     def test_combine_chunks_removes_chunk_files(self, temp_download_dir):
         """Test that combine_chunks removes chunk files after combining."""
         # Create temporary chunk files
-        chunk1 = temp_download_dir / "chunk_1234567890_0001"
-        chunk2 = temp_download_dir / "chunk_1234567890_0002"
+        chunk1 = temp_download_dir / "chunk_0001"
+        chunk2 = temp_download_dir / "chunk_0002"
         chunk1.write_bytes(b"first half")
         chunk2.write_bytes(b"second half")
 

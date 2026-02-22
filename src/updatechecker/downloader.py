@@ -3,7 +3,6 @@
 import threading
 import os
 import re
-import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
@@ -64,7 +63,7 @@ def download_chunk(
     Returns:
         Path to downloaded chunk file
     """
-    chunk_file = temp_dir / f"chunk_{int(time.time())}_{chunk_num:04d}"
+    chunk_file = temp_dir / f"chunk_{chunk_num:04d}"
     headers = {"Range": f"bytes={start}-{end}"}
     chunk_size = end - start + 1
 
