@@ -20,7 +20,7 @@ class HttpDownloader:
     handles all non-GitHub URL downloads.
     """
 
-    """HTTP downloader using httpx for generic URL downloads.
+    def calculate_chunks(
 
     Supports chunked parallel downloads for large files and
     handles all non-GitHub URL downloads.
