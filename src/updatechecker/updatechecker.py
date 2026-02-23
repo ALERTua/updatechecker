@@ -6,7 +6,7 @@ from pathlib import Path
 
 import psutil
 
-from . import common_tools as tools, downloader
+from . import common_tools as tools
 from . import constants
 from .config import (
     Config,
@@ -15,6 +15,7 @@ from .config import (
     expand_env_variables,
     substitute_variables,
 )
+from .downloader import DownloaderFactory
 from .logger import log
 
 
@@ -81,24 +82,22 @@ def process_entry(entry, force: bool = False, gh_token: str | None = None):
         log.debug(f"Launching {__cmd}")
         os.system(__cmd)
 
+    # Create appropriate downloader based on entry type
+    downloader = DownloaderFactory.create(entry, gh_token)
+
     if git_asset is not None:
         log.debug(f"Trying git package for git asset {git_asset}")
-        git_package = downloader.url_get_git_package(url)
+        git_package = downloader.validate_package(url)
         if git_package is None:
             log.warning("Url is not for a file and not a git package. Cannot proceed")
             return
 
-        releases = downloader.git_package_to_releases(git_package, gh_token)
-        if releases is None:
-            log.warning("No releases found for git package. Cannot proceed")
-            return
-
-        release = downloader.git_latest_release(releases)
+        release = downloader.get_latest_release(git_package)
         if release is None:
             log.warning("No releases found for git package. Cannot proceed")
             return
 
-        url = downloader.git_release_get_asset_url(release, git_asset)
+        url = downloader.get_asset_url(release, git_asset)
 
     url_file = downloader.url_to_filename(url)
     if url_file is None:

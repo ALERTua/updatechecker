@@ -10,8 +10,14 @@ from pathlib import Path
 import psutil
 
 from . import constants
-from .downloader import url_accessible, url_to_filename, get_url_headers
+from .downloader import HttpDownloader
 from .logger import log
+
+# Create a default HTTP downloader instance for utility functions
+_http = HttpDownloader()
+url_accessible = _http.url_accessible
+url_to_filename = _http.url_to_filename
+get_url_headers = _http.get_url_headers
 
 
 def process_running(executable=None, exe_path=None, cmdline=None):
@@ -98,9 +104,7 @@ def md5sum(path):
         if temp_file_path.exists():
             temp_file_path.unlink()
 
-        from .downloader import download_file_from_url
-
-        downloaded_file = download_file_from_url(path, temp_file_path)
+        downloaded_file = _http.download_file_from_url(path, temp_file_path)
         if downloaded_file is None or not downloaded_file.exists():
             log.warning(
                 f"Couldn't get url '{path}' md5: couldn't download it to file '{downloaded_file}'"

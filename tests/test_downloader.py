@@ -4,17 +4,22 @@ Tests for the parallel downloader module.
 
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from updatechecker.constants import DEFAULT_CHUNK_SIZE
-from updatechecker.downloader import (
-    calculate_chunks,
-    check_server_ranges,
-    combine_chunks,
-    get_file_size,
-    _cleanup_chunk_files,
-)
+from updatechecker.config import Entry
+from updatechecker.downloader import HttpDownloader, GitHubDownloader, DownloaderFactory
+
+
+# Create instance for testing
+_http = HttpDownloader()
+calculate_chunks = _http.calculate_chunks
+check_server_ranges = _http.check_server_ranges
+combine_chunks = _http.combine_chunks
+get_file_size = _http.get_file_size
+_cleanup_chunk_files = _http._cleanup_chunk_files
 
 
 class TestCalculateChunks:
@@ -109,13 +114,11 @@ class TestAutoChunkDetection:
 
     def test_auto_chunk_small_file(self, temp_download_dir):
         """Test that small files don't use chunked download."""
-        from updatechecker import downloader
-
         # A small file URL
         url = "https://raw.githubusercontent.com/olegbl/d2rmm/master/README.md"
         dest = temp_download_dir / "readme.md"
 
-        result = downloader.download_file_from_url(url, dest, chunked_download=None)
+        result = _http.download_file_from_url(url, dest, chunked_download=None)
 
         # Should succeed without chunking
         assert result is not None
@@ -124,13 +127,11 @@ class TestAutoChunkDetection:
 
     def test_force_chunked(self, temp_download_dir):
         """Test forcing chunked download."""
-        from updatechecker import downloader
-
         url = "https://raw.githubusercontent.com/olegbl/d2rmm/master/README.md"
         dest = temp_download_dir / "readme.md"
 
         # Force chunked even for small file
-        result = downloader.download_file_from_url(url, dest, chunked_download=True)
+        result = _http.download_file_from_url(url, dest, chunked_download=True)
 
         # Should work even if server doesn't support ranges
         assert result is not None
@@ -138,12 +139,10 @@ class TestAutoChunkDetection:
 
     def test_disable_chunked(self, temp_download_dir):
         """Test disabling chunked download."""
-        from updatechecker import downloader
-
         url = "https://raw.githubusercontent.com/olegbl/d2rmm/master/README.md"
         dest = temp_download_dir / "readme.md"
 
-        result = downloader.download_file_from_url(url, dest, chunked_download=False)
+        result = _http.download_file_from_url(url, dest, chunked_download=False)
 
         assert result is not None
         assert result.exists()
@@ -232,3 +231,89 @@ class TestChunkFileCleanup:
         # Verify chunk files are removed
         assert not chunk1.exists()
         assert not chunk2.exists()
+
+
+class TestDownloaderFactory:
+    """Test DownloaderFactory for creating appropriate downloaders based on entry type."""
+
+    def test_returns_http_downloader_when_no_git_asset(self):
+        """Test that HttpDownloader is returned when entry has no git_asset."""
+        entry = Entry(
+            name="test-entry", url="https://example.com/file.zip", target="./downloads"
+        )
+        downloader = DownloaderFactory.create(entry)
+
+        assert isinstance(downloader, HttpDownloader)
+        assert not isinstance(downloader, GitHubDownloader)
+
+    def test_returns_github_downloader_when_git_asset_set(self):
+        """Test that GitHubDownloader is returned when entry has git_asset."""
+        entry = Entry(
+            name="test-entry",
+            url="https://github.com/owner/repo",
+            target="./downloads",
+            git_asset=".*\\.zip",
+        )
+        downloader = DownloaderFactory.create(entry)
+
+        assert isinstance(downloader, GitHubDownloader)
+        assert isinstance(downloader, HttpDownloader)
+
+    @patch('updatechecker.downloader.github.Github')
+    def test_github_downloader_receives_token(self, mock_github):
+        """Test that GitHubDownloader receives the token when provided."""
+        entry = Entry(
+            name="test-entry",
+            url="https://github.com/owner/repo",
+            target="./downloads",
+            git_asset=".*\\.zip",
+        )
+        test_token = "test_github_token_123"
+        downloader = DownloaderFactory.create(entry, gh_token=test_token)
+
+        # Verify GitHubDownloader was created with token
+        assert isinstance(downloader, GitHubDownloader)
+        assert downloader._token == test_token
+
+    @patch('updatechecker.downloader.github.Github')
+    def test_github_downloader_works_without_token(self, mock_github):
+        """Test that GitHubDownloader works without token."""
+        entry = Entry(
+            name="test-entry",
+            url="https://github.com/owner/repo",
+            target="./downloads",
+            git_asset=".*\\.zip",
+        )
+        downloader = DownloaderFactory.create(entry)
+
+        # Verify GitHubDownloader was created without token
+        assert isinstance(downloader, GitHubDownloader)
+        assert downloader._token is None
+
+    def test_http_downloader_with_md5_entry(self):
+        """Test that HttpDownloader is returned for regular entries with MD5."""
+        entry = Entry(
+            name="test-entry",
+            url="https://example.com/file.zip",
+            target="./downloads",
+            md5="abc123",
+        )
+        downloader = DownloaderFactory.create(entry)
+
+        assert isinstance(downloader, HttpDownloader)
+        assert not isinstance(downloader, GitHubDownloader)
+
+    def test_github_downloader_with_all_options(self):
+        """Test GitHubDownloader with all entry options set."""
+        entry = Entry(
+            name="full-entry",
+            url="https://github.com/owner/repo",
+            target="./downloads",
+            git_asset=".*\\.exe",
+            md5="def456",
+            chunked_download=True,
+        )
+        downloader = DownloaderFactory.create(entry, gh_token="token123")
+
+        assert isinstance(downloader, GitHubDownloader)
+        assert downloader._token == "token123"
