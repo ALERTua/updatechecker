@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from updatechecker.common_tools import file_needs_update
-from updatechecker.downloader import git_package_to_releases
+from updatechecker.downloader import GitHubDownloader
 
 
 class TestFileNeedsUpdate:
@@ -150,53 +150,73 @@ class TestFileNeedsUpdate:
 
 
 class TestGitPackageToReleases:
-    """Test git_package_to_releases function with rate limiting."""
+    """Test GitHubDownloader.get_releases function with PyGithub."""
 
-    @patch('updatechecker.downloader.httpx.get')
-    def test_rate_limit_returns_none(self, mock_get):
+    @patch('updatechecker.downloader.github.Github')
+    def test_rate_limit_returns_none(self, mock_github):
         """Test that rate limit response returns None."""
-        # Mock the response with rate limit error - code returns None only for non-200 status
-        mock_response = MagicMock()
-        mock_response.status_code = 403  # Use non-200 status to trigger None return
-        mock_response.json.return_value = {
-            'documentation_url': 'https://docs.github.com/rest/overview/resources-in-the-rest-api#rate-limiting',
-            'message': "API rate limit exceeded for 195.3.129.109.",
-        }
-        mock_get.return_value = mock_response
+        # Mock the Github client to raise an exception (simulating rate limit)
+        mock_client = MagicMock()
+        mock_github.return_value = mock_client
+        mock_client.get_repo.side_effect = Exception("API rate limit exceeded")
 
-        result = git_package_to_releases('owner/repo')
-
-        assert result is None
-        mock_get.assert_called_once()
-
-    @patch('updatechecker.downloader.httpx.get')
-    def test_non_200_status_returns_none(self, mock_get):
-        """Test that non-200 status code returns None."""
-        mock_response = MagicMock()
-        mock_response.status_code = 403
-        mock_response.json.return_value = {'message': 'Forbidden'}
-        mock_get.return_value = mock_response
-
-        result = git_package_to_releases('owner/repo')
+        gh = GitHubDownloader()
+        result = gh.get_releases('owner/repo')
 
         assert result is None
 
-    @patch('updatechecker.downloader.httpx.get')
-    def test_normal_releases_returns_list(self, mock_get):
+    @patch('updatechecker.downloader.github.Github')
+    def test_repo_not_found_returns_none(self, mock_github):
+        """Test that non-existent repo returns None."""
+        # Mock the Github client to raise an exception
+        mock_client = MagicMock()
+        mock_github.return_value = mock_client
+        mock_client.get_repo.side_effect = Exception("Not Found")
+
+        gh = GitHubDownloader()
+        result = gh.get_releases('owner/repo')
+
+        assert result is None
+
+    @patch('updatechecker.downloader.github.Github')
+    def test_normal_releases_returns_list(self, mock_github):
         """Test that normal releases response returns list."""
-        # Mock the response with releases data
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [
-            {'tag_name': 'v1.0.0', 'name': 'Release 1'},
-            {'tag_name': 'v0.9.0', 'name': 'Release 2'},
-        ]
-        mock_get.return_value = mock_response
+        # Mock the release objects
+        mock_release1 = MagicMock()
+        mock_release1.id = 1
+        mock_release1.tag_name = 'v1.0.0'
+        mock_release1.title = 'Release 1'
+        mock_release1.body = 'Release notes'
+        mock_release1.draft = False
+        mock_release1.prerelease = False
+        mock_release1.published_at = '2024-01-01T00:00:00Z'
+        mock_release1.html_url = 'https://github.com/owner/repo/releases/tag/v1.0.0'
+        mock_release1.get_assets.return_value = []
 
-        result = git_package_to_releases('owner/repo')
+        mock_release2 = MagicMock()
+        mock_release2.id = 2
+        mock_release2.tag_name = 'v0.9.0'
+        mock_release2.title = 'Release 2'
+        mock_release2.body = 'Release notes'
+        mock_release2.draft = False
+        mock_release2.prerelease = False
+        mock_release2.published_at = '2023-12-01T00:00:00Z'
+        mock_release2.html_url = 'https://github.com/owner/repo/releases/tag/v0.9.0'
+        mock_release2.get_assets.return_value = []
 
-        assert result == [
-            {'tag_name': 'v1.0.0', 'name': 'Release 1'},
-            {'tag_name': 'v0.9.0', 'name': 'Release 2'},
-        ]
-        mock_get.assert_called_once()
+        # Mock the repo
+        mock_repo = MagicMock()
+        mock_repo.get_releases.return_value = [mock_release1, mock_release2]
+
+        # Mock the Github client
+        mock_client = MagicMock()
+        mock_github.return_value = mock_client
+        mock_client.get_repo.return_value = mock_repo
+
+        gh = GitHubDownloader()
+        result = gh.get_releases('owner/repo')
+
+        assert result is not None
+        assert len(result) == 2
+        assert result[0].tag_name == 'v1.0.0'
+        assert result[1].tag_name == 'v0.9.0'
