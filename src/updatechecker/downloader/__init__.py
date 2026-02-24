@@ -15,7 +15,7 @@ Usage:
     gh_dl = GitHubDownloader(token="your_token")
     package = gh_dl.validate_package("owner/repo")
     release = gh_dl.get_latest_release(package)
-    asset_url = gh_dl.get_asset_url(release, r"pattern.*\.zip")
+    asset_url = gh_dl.get_asset_url(release, r"pattern.*\\.zip")
 """
 
 from .factory import DownloaderFactory
