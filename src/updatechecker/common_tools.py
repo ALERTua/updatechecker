@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
 from typing import Iterable
+from concurrent.futures import ThreadPoolExecutor
 
 import psutil
 
@@ -141,6 +142,7 @@ def unzip_file(
     members: Iterable[str] | None = None,
     password: str | bytes | None = None,
     flatten: bool = False,
+    max_workers: int = 10,
 ) -> None:
     """
     Extract a ZIP archive to a destination directory.
@@ -152,6 +154,7 @@ def unzip_file(
         password: Optional password (str or bytes) for encrypted archives.
         flatten: If True and the archive contains exactly one top-level folder,
                  extract its contents directly into destination.
+        max_workers: Maximum number of threads for parallel extraction.
 
     Raises:
         FileNotFoundError: If source does not exist.
@@ -162,58 +165,59 @@ def unzip_file(
     destination_path = Path(destination)
 
     if not source_path.is_file():
-        raise FileNotFoundError(f"ZIP file not found: {source_path}")
+        raise FileNotFoundError(source_path)
 
     destination_path.mkdir(parents=True, exist_ok=True)
+    dest_resolved = destination_path.resolve()
 
-    pwd: bytes | None = None
-    if password is not None:
-        pwd = password.encode() if isinstance(password, str) else password
+    pwd: bytes | None = password.encode() if isinstance(password, str) else password
 
-    with zipfile.ZipFile(source_path, "r") as zf:
-        if pwd:
-            zf.setpassword(pwd)
-
+    with zipfile.ZipFile(source_path) as zf:
         all_members = zf.namelist()
-        selected_members = list(members) if members is not None else all_members
 
-        # Determine flatten root (if applicable)
-        flatten_root: str | None = None
-        if flatten and members is None:
-            top_levels = {
-                name.split("/", 1)[0]
-                for name in all_members
-                if name.strip() and not name.startswith("__MACOSX/")
-            }
+    selected_members = list(members) if members else all_members
 
-            if len(top_levels) == 1:
-                candidate = next(iter(top_levels))
-                # Ensure it's actually a directory structure
-                if any(name.startswith(f"{candidate}/") for name in all_members):
-                    flatten_root = f"{candidate}/"
+    # ---- flatten detection (single-threaded, cheap) ----
+    flatten_root: str | None = None
+    if flatten and members is None:
+        top_levels = {
+            name.split("/", 1)[0]
+            for name in all_members
+            if name.strip() and not name.startswith("__MACOSX/")
+        }
+        if len(top_levels) == 1:
+            candidate = next(iter(top_levels))
+            if any(name.startswith(f"{candidate}/") for name in all_members):
+                flatten_root = f"{candidate}/"
 
-        for member in selected_members:
-            # Skip directory entries explicitly — handled implicitly
-            if member.endswith("/"):
-                continue
+    def extract_one(member: str) -> None:
+        if member.endswith("/"):
+            return
 
-            original_member = member
+        original_member = member
 
-            if flatten_root and member.startswith(flatten_root):
-                member = member[len(flatten_root) :]
-                if not member:
-                    continue  # root folder entry itself
+        if flatten_root and member.startswith(flatten_root):
+            member = member[len(flatten_root) :]
+            if not member:
+                return
 
-            target_path = destination_path / member
-            target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path = destination_path / member
+        target_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Zip Slip protection
-            resolved_target = target_path.resolve()
-            if not str(resolved_target).startswith(str(destination_path.resolve())):
-                raise RuntimeError(f"Unsafe extraction path detected: {member}")
+        resolved_target = target_path.resolve()
+        if not str(resolved_target).startswith(str(dest_resolved)):
+            raise RuntimeError(f"Unsafe extraction path: {member}")
 
-            with zf.open(original_member, "r") as src, target_path.open("wb") as dst:
-                dst.write(src.read())
+        # IMPORTANT: open ZipFile inside thread
+        with zipfile.ZipFile(source_path) as zf:
+            if pwd:
+                zf.setpassword(pwd)
+            with zf.open(original_member) as src, target_path.open("wb") as dst:
+                shutil.copyfileobj(src, dst, 1024 * 1024)
+
+    # ---- parallel extraction ----
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        list(executor.map(extract_one, selected_members))
 
 
 def is_filename_archive(filename):
