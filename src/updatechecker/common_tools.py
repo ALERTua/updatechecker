@@ -1,11 +1,11 @@
 import hashlib
 import json
 import shutil
-import tempfile
 import zipfile
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
+from typing import Iterable
 
 import psutil
 
@@ -135,68 +135,85 @@ def _remove_existing_item(path: Path) -> None:
         path.unlink()
 
 
-def unzip_file(source, destination, members=None, password=None, flatten=False):
-    """Extract a zip file to the destination.
+def unzip_file(
+    source: str | Path,
+    destination: str | Path,
+    members: Iterable[str] | None = None,
+    password: str | bytes | None = None,
+    flatten: bool = False,
+) -> None:
+    """
+    Extract a ZIP archive to a destination directory.
 
     Args:
-        source: Path to the zip file
-        destination: Directory to extract to
-        members: Optional list of members to extract
-        password: Optional password for encrypted archives
-        flatten: If True and zip contains a single top-level directory,
-                 extract files directly to destination (skip the redundant folder)
+        source: Path to the ZIP file.
+        destination: Target directory for extraction.
+        members: Optional iterable of member names to extract.
+        password: Optional password (str or bytes) for encrypted archives.
+        flatten: If True and the archive contains exactly one top-level folder,
+                 extract its contents directly into destination.
+
+    Raises:
+        FileNotFoundError: If source does not exist.
+        zipfile.BadZipFile: If the file is not a valid ZIP archive.
+        RuntimeError: On invalid extraction paths (Zip Slip protection).
     """
-    if not flatten:
-        with zipfile.ZipFile(str(source), 'r') as _zip:
-            log.debug(f"Unzipping '{source}' to '{destination}'")
-            _zip.extractall(str(destination), members=members, pwd=password)
-        return
+    source_path = Path(source)
+    destination_path = Path(destination)
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-        with zipfile.ZipFile(str(source), 'r') as _zip:
-            log.debug(f"Flatten extracting '{source}' to temp '{temp_path}'")
-            _zip.extractall(str(temp_path), members=members, pwd=password)
+    if not source_path.is_file():
+        raise FileNotFoundError(f"ZIP file not found: {source_path}")
 
-        # Find top-level directories and files
-        top_level_items = list(temp_path.iterdir())
-        top_level_dirs = [item for item in top_level_items if item.is_dir()]
-        top_level_files = [item for item in top_level_items if item.is_file()]
+    destination_path.mkdir(parents=True, exist_ok=True)
 
-        if len(top_level_dirs) == 1 and len(top_level_files) == 0:
-            # Single directory - flatten it
-            source_dir = top_level_dirs[0]
-            log.debug(
-                f"Flattening: moving contents of '{source_dir.name}' to '{destination}'"
-            )
-            for item in source_dir.iterdir():
-                dest_item = Path(destination) / item.name
-                _remove_existing_item(dest_item)
-                shutil.move(str(item), str(dest_item))
-            # Remove the now-empty directory
-            source_dir.rmdir()
-        else:
-            # Multiple directories, files at root, or empty - use normal extraction
-            if len(top_level_dirs) > 1:
-                log.debug(
-                    "Multiple top-level directories found, using normal extraction"
-                )
-            elif len(top_level_files) > 0:
-                log.warning(
-                    "flatten=True but archive has no redundant folder to remove "
-                    "(files already at root). Extracting normally."
-                )
-            else:
-                log.debug("Empty archive, using normal extraction")
+    pwd: bytes | None = None
+    if password is not None:
+        pwd = password.encode() if isinstance(password, str) else password
 
-            # Copy all contents from temp_path to destination
-            for item in top_level_items:
-                dest_item = Path(destination) / item.name
-                _remove_existing_item(dest_item)
-                if item.is_dir():
-                    shutil.copytree(str(item), str(dest_item))
-                else:
-                    shutil.copy2(str(item), str(dest_item))
+    with zipfile.ZipFile(source_path, "r") as zf:
+        if pwd:
+            zf.setpassword(pwd)
+
+        all_members = zf.namelist()
+        selected_members = list(members) if members is not None else all_members
+
+        # Determine flatten root (if applicable)
+        flatten_root: str | None = None
+        if flatten and members is None:
+            top_levels = {
+                name.split("/", 1)[0]
+                for name in all_members
+                if name.strip() and not name.startswith("__MACOSX/")
+            }
+
+            if len(top_levels) == 1:
+                candidate = next(iter(top_levels))
+                # Ensure it's actually a directory structure
+                if any(name.startswith(f"{candidate}/") for name in all_members):
+                    flatten_root = f"{candidate}/"
+
+        for member in selected_members:
+            # Skip directory entries explicitly — handled implicitly
+            if member.endswith("/"):
+                continue
+
+            original_member = member
+
+            if flatten_root and member.startswith(flatten_root):
+                member = member[len(flatten_root) :]
+                if not member:
+                    continue  # root folder entry itself
+
+            target_path = destination_path / member
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Zip Slip protection
+            resolved_target = target_path.resolve()
+            if not str(resolved_target).startswith(str(destination_path.resolve())):
+                raise RuntimeError(f"Unsafe extraction path detected: {member}")
+
+            with zf.open(original_member, "r") as src, target_path.open("wb") as dst:
+                dst.write(src.read())
 
 
 def is_filename_archive(filename):
