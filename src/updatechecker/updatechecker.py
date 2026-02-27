@@ -98,6 +98,12 @@ def process_entry(entry, force: bool = False, gh_token: str | None = None):
             return
 
         url = downloader.get_asset_url(release, git_asset)
+        if not url:
+            log.warning(
+                f"No asset found for git asset {git_asset} within release {release} for package {git_package}."
+                f" Cannot proceed"
+            )
+            return
 
     url_file = downloader.url_to_filename(url)
     if url_file is None:
