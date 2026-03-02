@@ -64,6 +64,17 @@ flowchart TD
 
 ## CLI Usage
 
+Without installing, you can run it directly with `uv`:
+
+```bash
+uvx --from git+https://github.com/ALERTua/updatechecker updatechecker
+```
+
+Or install it as a `uv` tool:
+```bash
+uv tool install git+https://github.com/ALERTua/updatechecker
+```
+
 ```bash
 # Basic usage - check all entries
 uv run updatechecker
