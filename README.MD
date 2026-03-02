@@ -62,18 +62,76 @@ flowchart TD
 
 </details>
 
-## CLI Usage
+## Getting Started
 
-Without installing, you can run it directly with `uv`:
+### Installation
+
+- Without installing, you can run it directly with `uv`:
 
 ```bash
 uvx --from git+https://github.com/ALERTua/updatechecker updatechecker
 ```
 
-Or install it as a `uv` tool:
+- Or install it as a `uv` tool:
 ```bash
 uv tool install git+https://github.com/ALERTua/updatechecker
 ```
+
+- Or clone this repository:
+  1. Clone the repository:
+     ```bash
+     git clone https://github.com/ALERTua/updatechecker.git
+     ```
+  2. Install [uv](https://docs.astral.sh/uv/getting-started/installation/)
+  3. Run:
+     ```bash
+     uv run updatechecker
+     ```
+
+### Configuration
+
+Create `updatechecker.yaml` in `%USERPROFILE%` or in the cloned repository folder. See [updatechecker.example.yaml](updatechecker.example.yaml) for a complete example with detailed comments.
+
+#### Quick Example
+
+```yaml
+# Optional: GitHub token for authenticated API requests
+github_token: 'ghp_abc123'
+
+variables:
+  games_dir: 'D:\Games'
+  tools_dir: '{{games_dir}}\Tools'
+
+entries:
+  my_tool:
+    url: "https://github.com/user/repo"
+    git_asset: 'tool.*\.zip'      # Regex pattern for GitHub release asset
+    target: '{{tools_dir}}\tool.zip'
+    unzip_target: '{{tools_dir}}\tool'
+    chunked_download: true         # Enable parallel download for large files
+    flatten: true                  # Skip redundant versioned folder in zip
+```
+
+#### Entry Options
+
+| Option                     | Type   | Description                                               |
+|----------------------------|--------|-----------------------------------------------------------|
+| `url`                      | string | URL to download from or GitHub repo URL                   |
+| `git_asset`                | string | Regex pattern to match GitHub release asset               |
+| `md5`                      | string | URL containing MD5 hash for verification                  |
+| `target`                   | string | Full path to save downloaded file                         |
+| `unzip_target`             | string | Directory to extract archive to                           |
+| `archive_password`         | string | Password for encrypted archives                           |
+| `kill_if_locked`           | string | Process path/name to kill if file is locked               |
+| `relaunch`                 | bool   | Relaunch the killed process (default: false)              |
+| `launch`                   | string | Path to launch after download                             |
+| `arguments`                | string | Arguments for launch command                              |
+| `flatten`                  | bool   | Skip redundant parent folder in zip (default: false)      |
+| `chunked_download`         | bool   | Enable parallel chunked download (default: auto-detect)   |
+| `use_content_length_check` | bool   | Use file size check when metadata missing (default: true) |
+
+
+### CLI Usage
 
 ```bash
 # Basic usage - check all entries
@@ -103,72 +161,12 @@ uv run updatechecker --verbose
 
 ### CLI Options
 
-| Option | Short | Description |
-|--------|-------|-------------|
-| `--config` | `-c` | Path to config file (default: `~/updatechecker.yaml`) |
-| `--async/--no-async` | | Enable/disable parallel processing (default: enabled) |
-| `--threads` | `-t` | Number of threads for parallel processing (default: CPU count - 1) |
-| `--entries` | `-e` | Comma-separated list of entry names to check (default: all) |
-| `--force` | | Force re-download, skip HEAD/MD5 checks |
-| `--verbose` | `-v` | Enable verbose output (DEBUG log level) |
-| `--gh-token` | | GitHub token for API requests (overrides config and `GITHUB_TOKEN` env var) |
-
-## Configuration
-
-Create `updatechecker.yaml` in `%USERPROFILE%` or in the cloned repository folder. See [updatechecker.example.yaml](updatechecker.example.yaml) for a complete example with detailed comments.
-
-### Quick Example
-
-```yaml
-# Optional: GitHub token for authenticated API requests
-github_token: 'ghp_abc123'
-
-variables:
-  games_dir: 'D:\Games'
-  tools_dir: '{{games_dir}}\Tools'
-
-entries:
-  my_tool:
-    url: "https://github.com/user/repo"
-    git_asset: 'tool.*\.zip'      # Regex pattern for GitHub release asset
-    target: '{{tools_dir}}\tool.zip'
-    unzip_target: '{{tools_dir}}\tool'
-    chunked_download: true         # Enable parallel download for large files
-    flatten: true                  # Skip redundant versioned folder in zip
-```
-
-### Entry Options
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `url` | string | URL to download from or GitHub repo URL |
-| `git_asset` | string | Regex pattern to match GitHub release asset |
-| `md5` | string | URL containing MD5 hash for verification |
-| `target` | string | Full path to save downloaded file |
-| `unzip_target` | string | Directory to extract archive to |
-| `archive_password` | string | Password for encrypted archives |
-| `kill_if_locked` | string | Process path/name to kill if file is locked |
-| `relaunch` | bool | Relaunch the killed process (default: false) |
-| `launch` | string | Path to launch after download |
-| `arguments` | string | Arguments for launch command |
-| `flatten` | bool | Skip redundant parent folder in zip (default: false) |
-| `chunked_download` | bool | Enable parallel chunked download (default: auto-detect) |
-| `use_content_length_check` | bool | Use file size check when metadata missing (default: true) |
-
-## Getting Started
-
-### Installation
-
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/ALERTua/updatechecker.git
-   ```
-2. Install [uv](https://docs.astral.sh/uv/getting-started/installation/)
-3. Create config from example:
-   ```bash
-   cp updatechecker.example.yaml ~/updatechecker.yaml
-   ```
-4. Edit config and run:
-   ```bash
-   uv run updatechecker
-   ```
+| Option               | Short | Description                                                                 |
+|----------------------|-------|-----------------------------------------------------------------------------|
+| `--config`           | `-c`  | Path to config file (default: `~/updatechecker.yaml`)                       |
+| `--async/--no-async` |       | Enable/disable parallel processing (default: enabled)                       |
+| `--threads`          | `-t`  | Number of threads for parallel processing (default: CPU count - 1)          |
+| `--entries`          | `-e`  | Comma-separated list of entry names to check (default: all)                 |
+| `--force`            |       | Force re-download, skip HEAD/MD5 checks                                     |
+| `--verbose`          | `-v`  | Enable verbose output (DEBUG log level)                                     |
+| `--gh-token`         |       | GitHub token for API requests (overrides config and `GITHUB_TOKEN` env var) |
