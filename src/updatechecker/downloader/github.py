@@ -104,6 +104,9 @@ class GitHubDownloader(HttpDownloader):
         """
         try:
             assets = release.get_assets()
+            assets = sorted(
+                assets, key=lambda _: _.updated_at, reverse=True
+            )  # sort by latest
             for asset in assets:
                 if re.match(asset_pattern, asset.name):
                     url = asset.browser_download_url
