@@ -15,7 +15,7 @@
     <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
     <option name="RUN_TOOL" value="true" />
     <option name="SCRIPT_NAME" value="src.updatechecker.cli" />
-    <option name="PARAMETERS" value="--verbose --no-async -e sourcegit --force" />
+    <option name="PARAMETERS" value="--verbose --no-async --force -e rustdesk_client" />
     <option name="SHOW_COMMAND_LINE" value="false" />
     <option name="EMULATE_TERMINAL" value="false" />
     <option name="MODULE_MODE" value="true" />
