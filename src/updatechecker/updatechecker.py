@@ -195,7 +195,7 @@ def process_entry(entry, force: bool = False, gh_token: str | None = None):
     try:
         target.rename(bak_file)
     except Exception as e:
-        if kill_if_locked is None:
+        if not kill_if_locked:
             log.warning(f"Couldn't back up '{target}': {type(e)} {e}")
             return
 
@@ -243,7 +243,7 @@ def process_archive(entry):
             f"Couldn't unzip archive to '{unzip_target}': {type(exc).__name__} {exc}. "
             f"Attempt {retry_state.attempt_number}, retrying in 3s."
         )
-        if tools.process_running(exe_path=kill_if_locked):
+        if kill_if_locked and tools.process_running(exe_path=kill_if_locked):
             tools.kill_process(exe_path=kill_if_locked)
 
     try:
