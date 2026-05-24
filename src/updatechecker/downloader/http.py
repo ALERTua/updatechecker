@@ -1,7 +1,9 @@
 """HTTP downloader implementation using httpx for generic URL downloads."""
 
 import os
+import shutil
 import threading
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
@@ -319,55 +321,64 @@ class HttpDownloader:
 
         log.debug(f"Downloading {filename} in {num_chunks} parallel chunks")
 
+        # Per-download chunk dir: two concurrent downloads previously shared
+        # chunk_NNNN paths in TEMP_FOLDER and overwrote each other's bytes,
+        # producing corrupt archives with interleaved content.
+        chunk_dir = constants.TEMP_FOLDER / f"{destination.name}.{uuid.uuid4().hex[:8]}"
+        chunk_dir.mkdir(parents=True, exist_ok=True)
+
         # Track total progress across all chunks with thread-safe locking
         completed_chunks = [0] * num_chunks
         total_downloaded = [0]  # Use list to allow modification in nested function
         progress_lock = threading.Lock()
 
-        with ThreadPoolExecutor(max_workers=num_chunks) as executor:
-            # Submit all chunk download tasks in parallel
-            futures = []
-            for i, (start, end) in enumerate(chunks):
-                # Create callback for this chunk
-                def make_callback(idx, lock):
-                    def callback(downloaded, total):
-                        with lock:
-                            completed_chunks[idx] = downloaded
-                            total_downloaded[0] = sum(completed_chunks)
-                        if progress_callback:
-                            progress_callback(filename, total_downloaded[0], file_size)
+        try:
+            with ThreadPoolExecutor(max_workers=num_chunks) as executor:
+                # Submit all chunk download tasks in parallel
+                futures = []
+                for i, (start, end) in enumerate(chunks):
+                    # Create callback for this chunk
+                    def make_callback(idx, lock):
+                        def callback(downloaded, total):
+                            with lock:
+                                completed_chunks[idx] = downloaded
+                                total_downloaded[0] = sum(completed_chunks)
+                            if progress_callback:
+                                progress_callback(
+                                    filename, total_downloaded[0], file_size
+                                )
 
-                    return callback
+                        return callback
 
-                future = executor.submit(
-                    self.download_chunk,
-                    url,
-                    start,
-                    end,
-                    i,
-                    constants.TEMP_FOLDER,
-                    make_callback(i, progress_lock),
-                )
-                futures.append((i, future))
-
-            # Collect all results after all downloads are submitted
-            chunk_files = []
-            for chunk_idx, future in futures:
-                try:
-                    chunk_file = future.result()
-                    chunk_files.append(chunk_file)
-                except Exception as e:
-                    log.error(f"Chunk {chunk_idx} failed: {e}")
-                    # Fall back to single connection
-                    log.warning("Falling back to single connection download")
-                    # Clean up already downloaded chunk files before falling back
-                    self._cleanup_chunk_files(chunk_files)
-                    return self._download_single(
-                        url, destination, filename, progress_callback
+                    future = executor.submit(
+                        self.download_chunk,
+                        url,
+                        start,
+                        end,
+                        i,
+                        chunk_dir,
+                        make_callback(i, progress_lock),
                     )
+                    futures.append((i, future))
 
-        # Combine chunks after all downloads complete
-        self.combine_chunks(chunk_files, destination)
+                # Collect all results after all downloads are submitted
+                chunk_files = []
+                for chunk_idx, future in futures:
+                    try:
+                        chunk_file = future.result()
+                        chunk_files.append(chunk_file)
+                    except Exception as e:
+                        log.error(f"Chunk {chunk_idx} failed: {e}")
+                        # Fall back to single connection
+                        log.warning("Falling back to single connection download")
+                        return self._download_single(
+                            url, destination, filename, progress_callback
+                        )
+
+            # Combine chunks after all downloads complete
+            self.combine_chunks(chunk_files, destination)
+        finally:
+            shutil.rmtree(chunk_dir, ignore_errors=True)
 
         return destination
 
