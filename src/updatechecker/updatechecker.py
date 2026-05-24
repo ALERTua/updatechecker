@@ -1,6 +1,7 @@
 import os
 import pprint
 import shutil
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -237,10 +238,19 @@ def process_archive(entry):
     if not (tools.is_filename_archive(target.name) and unzip_target is not None):
         return
 
+    if not zipfile.is_zipfile(target):
+        log.warning(
+            f"'{target}' is not a valid zip archive (missing/invalid end-of-central-directory). "
+            f"Skipping unzip. Likely a corrupt or incomplete download, an HTML error page saved "
+            f"with a .zip extension, or a non-ZIP archive format."
+        )
+        return
+
     def _unlock(retry_state):
         exc = retry_state.outcome.exception()
         log.warning(
-            f"Couldn't unzip archive to '{unzip_target}': {type(exc).__name__} {exc}. "
+            f"Couldn't unzip '{target}' to '{unzip_target}': "
+            f"{type(exc).__name__} {exc}. "
             f"Attempt {retry_state.attempt_number}, retrying in 3s."
         )
         if kill_if_locked and tools.process_running(exe_path=kill_if_locked):
@@ -260,7 +270,7 @@ def process_archive(entry):
                 )
     except Exception as e:
         log.warning(
-            f"Couldn't unzip archive to '{unzip_target}' after 4 attempts: "
+            f"Couldn't unzip '{target}' to '{unzip_target}' after 4 attempts: "
             f"{type(e).__name__} {e}. Giving up."
         )
 
