@@ -85,12 +85,13 @@ class GitHubDownloader(HttpDownloader):
         Returns:
             GitRelease object, or None if no releases or error
         """
-        releases = self.get_releases(package)
-        if not releases:
-            log.debug(f"No releases found for '{package}'")
+        try:
+            repo = self._client.get_repo(package)
+            return repo.get_latest_release()
+        except Exception as e:
+            token_str = 'with token' if self._token else 'without token'
+            log.warning(f"GitHub API error for package '{package}' {token_str}: {e}")
             return None
-
-        return releases[0]
 
     def get_asset_url(self, release: GitRelease, asset_pattern: str) -> str | None:
         """Get the download URL for an asset matching the given pattern.
