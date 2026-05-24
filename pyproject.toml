@@ -12,6 +12,7 @@ dependencies = [
     "PyGithub",
     "pyyaml",
     "rich",
+    "tenacity",
     "typer",
 ]
 

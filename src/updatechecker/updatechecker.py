@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import psutil
+from tenacity import Retrying, retry_if_exception_type, stop_after_attempt, wait_fixed
 
 from . import common_tools as tools
 from . import constants
@@ -233,27 +234,35 @@ def process_archive(entry):
     flatten = entry.flatten
     target = Path(entry.target)
 
-    if tools.is_filename_archive(target.name) and unzip_target is not None:
-        try:
-            tools.unzip_file(
-                target, unzip_target, password=archive_password, flatten=flatten
-            )
-        except Exception as e:
-            log.warning(f"Couldn't unzip archive to '{unzip_target}': {type(e)} {e}")
+    if not (tools.is_filename_archive(target.name) and unzip_target is not None):
+        return
 
-            proc_running = tools.process_running(exe_path=kill_if_locked)
-            if proc_running:
-                tools.kill_process(exe_path=kill_if_locked)
+    def _unlock(retry_state):
+        exc = retry_state.outcome.exception()
+        log.warning(
+            f"Couldn't unzip archive to '{unzip_target}': {type(exc).__name__} {exc}. "
+            f"Attempt {retry_state.attempt_number}, retrying in 3s."
+        )
+        if tools.process_running(exe_path=kill_if_locked):
+            tools.kill_process(exe_path=kill_if_locked)
 
-            try:
+    try:
+        for attempt in Retrying(
+            stop=stop_after_attempt(4),
+            wait=wait_fixed(3),
+            retry=retry_if_exception_type(Exception),
+            before_sleep=_unlock,
+            reraise=True,
+        ):
+            with attempt:
                 tools.unzip_file(
                     target, unzip_target, password=archive_password, flatten=flatten
                 )
-            except Exception as e:
-                log.warning(
-                    f"Couldn't unzip archive to '{unzip_target}' after unlocking: {type(e)} {e}. Breaking"
-                )
-                return
+    except Exception as e:
+        log.warning(
+            f"Couldn't unzip archive to '{unzip_target}' after 4 attempts: "
+            f"{type(e).__name__} {e}. Giving up."
+        )
 
 
 def updatechecker(
