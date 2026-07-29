@@ -1,15 +1,17 @@
 """Tests for the variables feature in config."""
 
 import os
+
 import pytest
+
 from updatechecker.config import (
-    substitute_variables,
-    expand_env_variables,
     Variables,
-    entry_validator,
-    _read_yaml_variables,
-    _read_yaml_entries,
     _get_variables,
+    _read_yaml_entries,
+    _read_yaml_variables,
+    entry_validator,
+    expand_env_variables,
+    substitute_variables,
 )
 
 

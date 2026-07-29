@@ -6,13 +6,14 @@ import time
 
 from rich.console import Console
 from rich.progress import (
-    Progress,
     BarColumn,
-    TextColumn,
-    TimeRemainingColumn,
-    TimeElapsedColumn,
+    Progress,
     ProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
 )
+
 from . import constants
 
 
@@ -198,8 +199,7 @@ def remove_download_task(filename: str):
             task_id = _download_tasks[filename]
             del _download_speeds[task_id]
             del _download_tasks[filename]
-        if filename in _download_start_times:
-            del _download_start_times[filename]
+        _download_start_times.pop(filename, None)
 
 
 def clear_download_tasks():

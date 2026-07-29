@@ -55,7 +55,7 @@ def prepare_entry(entry_dict: dict, name: str, variables: dict) -> Entry:
 
     # Substitute variables in path fields
     for field in path_fields:
-        if field in entry and entry[field]:
+        if entry.get(field):
             entry[field] = substitute_variables(entry[field], merged_variables)
 
     return Entry(**entry, name=name)
@@ -128,9 +128,11 @@ def process_entry(entry, force: bool = False, gh_token: str | None = None):
 
     if not target.exists():
         log.debug(f"Target '{target}' doesn't exist. Just downloading url")
-        downloader.download_file_from_url(
-            url, target, chunked_download=entry.chunked_download
-        )
+        if not _download_to_target(
+            downloader, url, target, chunked_download=entry.chunked_download
+        ):
+            log.error(f"Download of '{url}' to '{target}' failed")
+            return
         tools.update_file_metadata(url, target)
         process_archive(entry)
         if launch:
@@ -159,7 +161,12 @@ def process_entry(entry, force: bool = False, gh_token: str | None = None):
         else:
             log.debug("HEAD check failed, falling back to MD5 comparison")
         if url_md5 is None:
-            downloader.download_file_from_url(url, temp_file)
+            downloaded = downloader.download_file_from_url(
+                url, temp_file, chunked_download=entry.chunked_download
+            )
+            if downloaded is None:
+                log.error(f"Download of '{url}' failed, keeping '{target}' as is")
+                return
             url_md5 = tools.md5sum(temp_file)
         else:
             url_md5 = downloader.read_url(url_md5)
@@ -209,12 +216,15 @@ def process_entry(entry, force: bool = False, gh_token: str | None = None):
         log.debug(f"Moving '{temp_file}' to '{target}'")
         shutil.move(str(temp_file), str(target))
         del_temp()
-    else:
-        downloader.download_file_from_url(
-            url, target, chunked_download=entry.chunked_download
-        )
+    elif not _download_to_target(
+        downloader, url, target, chunked_download=entry.chunked_download
+    ):
+        log.error(f"Download of '{url}' failed, restoring previous '{target}'")
+        if not target.exists() and bak_file.exists():
+            bak_file.rename(target)
+        return
 
-    # Update metadata after successful download
+    # Update metadata only after successful download
     tools.update_file_metadata(url, target)
 
     process_archive(entry)

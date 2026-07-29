@@ -4,6 +4,7 @@ import os
 import shutil
 import threading
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable

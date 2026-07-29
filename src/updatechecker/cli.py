@@ -1,12 +1,13 @@
 """Command-line interface argument parsing using Typer."""
 
+import logging
 from pathlib import Path
 from typing import Annotated
-import typer
-import logging
 
-from .updatechecker import updatechecker, get_default_config_path
+import typer
+
 from .logger import log
+from .updatechecker import get_default_config_path, updatechecker
 
 app = typer.Typer(
     name="updatechecker",

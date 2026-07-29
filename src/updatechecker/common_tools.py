@@ -2,11 +2,11 @@ import hashlib
 import json
 import shutil
 import zipfile
+from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
-from typing import Iterable
-from concurrent.futures import ThreadPoolExecutor
 
 import psutil
 

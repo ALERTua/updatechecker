@@ -4,7 +4,6 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-
 from updatechecker.common_tools import unzip_file
 
 

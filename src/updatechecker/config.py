@@ -174,7 +174,7 @@ def entry_validator(entries, variables=None):
 
         # Substitute variables in path fields
         for field in path_fields:
-            if field in entry and entry[field]:
+            if entry.get(field):
                 entry[field] = substitute_variables(entry[field], merged)
 
         Entry(**entry, name=entry_name)

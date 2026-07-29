@@ -2,11 +2,11 @@
 
 import re
 
-from github import Github, Auth
+from github import Auth, Github
 from github.GitRelease import GitRelease
 
-from .http import HttpDownloader
 from ..logger import log
+from .http import HttpDownloader
 
 
 class GitHubDownloader(HttpDownloader):

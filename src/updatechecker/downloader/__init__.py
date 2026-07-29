@@ -19,11 +19,11 @@ Usage:
 """
 
 from .factory import DownloaderFactory
-from .http import HttpDownloader
 from .github import GitHubDownloader
+from .http import HttpDownloader
 
 __all__ = [
-    'HttpDownloader',
-    'GitHubDownloader',
     'DownloaderFactory',
+    'GitHubDownloader',
+    'HttpDownloader',
 ]

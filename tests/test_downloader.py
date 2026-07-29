@@ -8,10 +8,9 @@ from unittest.mock import patch
 
 import pytest
 
-from updatechecker.constants import DEFAULT_CHUNK_SIZE
 from updatechecker.config import Entry
-from updatechecker.downloader import HttpDownloader, GitHubDownloader, DownloaderFactory
-
+from updatechecker.constants import DEFAULT_CHUNK_SIZE
+from updatechecker.downloader import DownloaderFactory, GitHubDownloader, HttpDownloader
 
 # Create instance for testing
 _http = HttpDownloader()

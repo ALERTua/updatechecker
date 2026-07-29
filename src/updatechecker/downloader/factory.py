@@ -2,8 +2,8 @@
 
 from typing import TYPE_CHECKING
 
-from .http import HttpDownloader
 from .github import GitHubDownloader
+from .http import HttpDownloader
 
 if TYPE_CHECKING:
     from ..config import Entry
