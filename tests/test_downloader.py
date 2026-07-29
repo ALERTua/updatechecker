@@ -3,6 +3,8 @@ Tests for the parallel downloader module.
 """
 
 import tempfile
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -230,6 +232,120 @@ class TestChunkFileCleanup:
         # Verify chunk files are removed
         assert not chunk1.exists()
         assert not chunk2.exists()
+
+
+def _serve(handler_class):
+    """Start a local threading HTTP server; return (server, base_url)."""
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler_class)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, f'http://127.0.0.1:{server.server_port}'
+
+
+@pytest.fixture
+def no_content_length_server():
+    """Server that streams a body without a Content-Length header."""
+    body = b'x' * 4096
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = 'HTTP/1.0'  # close-delimited body, no Content-Length
+
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_HEAD(self):
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, format, *args):
+            pass
+
+    server, base_url = _serve(Handler)
+    yield f'{base_url}/file.bin', body
+    server.shutdown()
+
+
+@pytest.fixture
+def range_ignoring_server():
+    """Server that advertises Accept-Ranges but answers 200 with the full body."""
+    body = b'y' * 1000
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = 'HTTP/1.1'
+
+        def do_GET(self):
+            # Deliberately ignore any Range header
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Accept-Ranges', 'bytes')
+            self.end_headers()
+
+        def log_message(self, format, *args):
+            pass
+
+    server, base_url = _serve(Handler)
+    yield f'{base_url}/file.bin', body
+    server.shutdown()
+
+
+class TestNoContentLength:
+    """Downloads without Content-Length must stream to disk, not buffer."""
+
+    def test_download_succeeds_without_content_length(
+        self, no_content_length_server, temp_download_dir
+    ):
+        url, body = no_content_length_server
+        dest = temp_download_dir / 'file.bin'
+
+        result = _http.download_file_from_url(url, dest)
+
+        assert result is not None
+        assert dest.read_bytes() == body
+
+
+class TestRangeIgnoringServer:
+    """A server answering 200 to a Range request must never corrupt the file."""
+
+    def test_download_chunk_rejects_200(self, range_ignoring_server, temp_download_dir):
+        url, _body = range_ignoring_server
+
+        with pytest.raises(RuntimeError, match='ignored Range'):
+            _http.download_chunk(url, 0, 99, 0, temp_download_dir)
+
+    def test_parallel_download_falls_back_to_single(
+        self, range_ignoring_server, temp_download_dir
+    ):
+        """Chunked download detects the 200s and falls back to a single
+        connection; previously it concatenated N full copies of the file."""
+        url, body = range_ignoring_server
+        dest = temp_download_dir / 'file.bin'
+
+        result = _http._download_with_httpx(url, dest, chunked=True, chunk_size=100)
+
+        assert result == dest
+        assert dest.read_bytes() == body
+
+
+class TestDisplayName:
+    """Progress display names must not leak query strings."""
+
+    def test_query_string_stripped(self):
+        name = _http._display_name('https://x.com/path/file.zip?token=secret')
+        assert name == 'file.zip'
+
+    def test_plain_url(self):
+        assert _http._display_name('https://x.com/file.zip') == 'file.zip'
+
+    def test_no_path_falls_back_to_url(self):
+        assert _http._display_name('https://x.com') == 'https://x.com'
 
 
 class TestDownloaderFactory:

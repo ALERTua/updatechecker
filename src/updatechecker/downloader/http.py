@@ -197,18 +197,22 @@ class HttpDownloader:
         Returns:
             Path to downloaded file, or None on failure
         """
-        filename = source.split('/')[-1]
+        # Key progress by destination: two downloads may share a filename
+        task_key = str(destination)
 
         def _progress_callback(filename: str, downloaded: int, total: int):
             """Progress callback for download."""
             if total > 0:
-                log.update_download_progress(filename, downloaded, total)
+                log.update_download_progress(
+                    task_key, downloaded, total, description=filename
+                )
 
         try:
             # Start progress display
             log.start_download_progress()
             # Determine chunked setting based on file size if not specified
             should_chunk = chunked_download
+            file_size = None
             if should_chunk is None:
                 # Auto-detect: check file size first
                 file_size = self.get_file_size(source)
@@ -224,17 +228,25 @@ class HttpDownloader:
                 destination,
                 chunked=should_chunk,
                 progress_callback=progress_callback or _progress_callback,
+                file_size=file_size,
             )
-
-            log.stop_download_progress()
-            log.remove_download_task(filename)
         # Deliberate broad catch: this is the resilience boundary of the
         # downloader — callers rely on None for ANY failure kind.
         except Exception as e:  # noqa: BLE001
             log.error(f"Error downloading '{source}' to '{destination}'\n{type(e)} {e}")
             return None
+        finally:
+            # Previously only ran on success, so a failed download left the
+            # progress display running and its task row behind
+            log.stop_download_progress()
+            log.remove_download_task(task_key)
 
         return Path(destination)
+
+    @staticmethod
+    def _display_name(url: str) -> str:
+        """Filename part of a URL for display (query string stripped)."""
+        return os.path.basename(urlparse(url).path) or url
 
     def _download_with_httpx(
         self,
@@ -243,6 +255,7 @@ class HttpDownloader:
         chunked: bool = True,
         progress_callback: Callable | None = None,
         chunk_size: int = constants.DEFAULT_CHUNK_SIZE,
+        file_size: int | None = None,
     ) -> Path:
         """Download file using httpx with optional chunked parallel download.
 
@@ -252,14 +265,16 @@ class HttpDownloader:
             chunked: Whether to use chunked parallel download
             progress_callback: Optional callback(filename, downloaded, total) for progress
             chunk_size: Size of each chunk in bytes
+            file_size: Known file size in bytes; fetched via HEAD when None
 
         Returns:
             Path to downloaded file
         """
-        filename = url.split('/')[-1]
+        filename = self._display_name(url)
 
-        # Get file size via HEAD request
-        file_size = self.get_file_size(url)
+        if file_size is None:
+            # Get file size via HEAD request
+            file_size = self.get_file_size(url)
 
         if file_size is None:
             log.warning(
@@ -296,26 +311,22 @@ class HttpDownloader:
         ) as response:
             response.raise_for_status()
 
-            # Get total size from headers (may differ from Content-Length if compressed)
+            # Total size from headers; 0 when the server sends no
+            # Content-Length - stream to disk either way instead of
+            # buffering the whole body in memory
             total = int(response.headers.get("Content-Length", 0))
-            if total == 0:
-                # Read all content first to get actual size
-                content = b"".join(response.iter_bytes())
-                total = len(content)
-                with open(destination, 'wb') as f:
-                    f.write(content)
-                if progress_callback:
-                    progress_callback(filename, total, total)
-                return destination
 
             downloaded = 0
-
             with open(destination, 'wb') as f:
                 for chunk in response.iter_bytes(chunk_size=8192):
                     f.write(chunk)
                     downloaded += len(chunk)
                     if progress_callback:
                         progress_callback(filename, downloaded, total)
+
+            if total == 0 and progress_callback:
+                # Size was unknown; report completion now that it's known
+                progress_callback(filename, downloaded, downloaded)
 
         return destination
 

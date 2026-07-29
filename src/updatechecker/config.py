@@ -306,10 +306,9 @@ class Config:
 
 def _get_default_config_paths():
     """Get list of default config file paths to search."""
-    home_dir = os.getenv('USERPROFILE', '~').replace('\\', '/')
     return [
         f"./{config_filename}",
-        f"{home_dir}/{config_filename}",
+        str(Path.home() / config_filename),
     ]
 
 

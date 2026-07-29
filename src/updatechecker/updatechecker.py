@@ -25,13 +25,20 @@ from .logger import log
 
 
 def get_default_config_path() -> Path:
-    """Get the default config path: ~/updatechecker.yaml"""
-    local_config = constants.ROOT_FOLDER / config_filename
-    if local_config.exists():
-        return Path(local_config)
+    """Get the default config path.
 
-    home_dir = os.getenv('USERPROFILE', os.getenv('HOME', '~')).replace('\\', '/')
-    return Path(f"{home_dir}/{config_filename}")
+    Search order: current directory, then the package root (dev checkout),
+    then ~/updatechecker.yaml.
+    """
+    candidates = (
+        Path.cwd() / config_filename,
+        constants.ROOT_FOLDER / config_filename,
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    return Path.home() / config_filename
 
 
 def prepare_entry(entry_dict: dict, name: str, variables: dict) -> Entry:

@@ -5,6 +5,7 @@ from unittest.mock import patch
 import yaml
 
 from updatechecker.updatechecker import (
+    get_default_config_path,
     launch_detached,
     prepare_entry,
     updatechecker,
@@ -13,6 +14,27 @@ from updatechecker.updatechecker import (
 
 def write_config(path, data):
     path.write_text(yaml.safe_dump(data), encoding='utf-8')
+
+
+class TestDefaultConfigPath:
+    """Config lookup: current directory first, home as the final fallback."""
+
+    def test_local_config_in_cwd_wins(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        local = tmp_path / 'updatechecker.yaml'
+        local.write_text('entries: {}', encoding='utf-8')
+
+        assert get_default_config_path() == local
+
+    def test_fallback_is_never_a_literal_tilde(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+
+        result = get_default_config_path()
+        # Either the dev-checkout root config (if the developer has one)
+        # or the home fallback; never a literal '~'
+        assert '~' not in str(result)
+        assert result.name == 'updatechecker.yaml'
+        assert result.is_absolute()
 
 
 class TestLaunchDetached:

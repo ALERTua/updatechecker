@@ -101,10 +101,11 @@ class DownloadSpeedColumn(ProgressColumn):
 
 # Global progress instance for downloads
 _progress: Progress | None = None
-_download_tasks: dict[str, int] = {}
-_download_start_times: dict[str, float] = {}  # filename -> start time
+_download_tasks: dict[str, int] = {}  # task key -> progress task id
+_download_start_times: dict[str, float] = {}  # task key -> start time
 _download_speeds: dict[int, float] = {}  # task_id -> speed in bytes per second
 _download_lock = threading.Lock()  # Lock for thread-safe access to global state
+_active_downloads = 0  # started-but-not-finished downloads; display stops at 0
 
 
 def get_progress() -> Progress:
@@ -138,24 +139,43 @@ def get_progress() -> Progress:
 
 
 def start_download_progress():
-    """Start the download progress display."""
-    if _progress is not None and not _progress.live.is_started:
-        _progress.start()
+    """Register an active download and start the display if needed.
+
+    Paired with stop_download_progress(): the display is shared between
+    concurrent downloads and only stops when the last one finishes.
+    """
+    global _active_downloads
+    with _download_lock:
+        _active_downloads += 1
+        if _progress is not None and not _progress.live.is_started:
+            _progress.start()
 
 
 def stop_download_progress():
-    """Stop the download progress display."""
-    if _progress is not None and _progress.live.is_started:
-        _progress.stop()
+    """Unregister an active download; stop the display when none remain."""
+    global _active_downloads
+    with _download_lock:
+        _active_downloads = max(0, _active_downloads - 1)
+        if (
+            _active_downloads == 0
+            and _progress is not None
+            and _progress.live.is_started
+        ):
+            _progress.stop()
 
 
-def update_download_progress(filename: str, downloaded: int, total: int):
+def update_download_progress(
+    key: str, downloaded: int, total: int, description: str | None = None
+):
     """Update the progress bar for a download.
 
     Args:
-        filename: Name of the file being downloaded
+        key: Unique key for this download (e.g. the destination path).
+            Two concurrent downloads may share a display name, so the name
+            alone can't identify the progress row.
         downloaded: Number of bytes downloaded
         total: Total size of the file in bytes
+        description: Display name for the progress row (defaults to key)
     """
     with _download_lock:
         progress = get_progress()
@@ -164,17 +184,19 @@ def update_download_progress(filename: str, downloaded: int, total: int):
         if not progress.live.is_started:
             progress.start()
 
-        # Get or create task for this file - only create if doesn't exist
-        if filename not in _download_tasks:
-            _download_start_times[filename] = time.time()
-            task_id = progress.add_task(f"Downloading {filename}", total=total)
-            _download_tasks[filename] = task_id
+        # Get or create task for this download - only create if doesn't exist
+        if key not in _download_tasks:
+            _download_start_times[key] = time.time()
+            task_id = progress.add_task(
+                f"Downloading {description or key}", total=total
+            )
+            _download_tasks[key] = task_id
             _download_speeds[task_id] = 0
         else:
-            task_id = _download_tasks[filename]
+            task_id = _download_tasks[key]
 
         # Calculate download speed
-        start_time = _download_start_times.get(filename, time.time())
+        start_time = _download_start_times.get(key, time.time())
         elapsed = time.time() - start_time
         speed = downloaded / elapsed if elapsed > 0 else 0
         _download_speeds[task_id] = speed
@@ -187,14 +209,14 @@ def update_download_progress(filename: str, downloaded: int, total: int):
             progress.update(task_id, completed=downloaded)
 
 
-def remove_download_task(filename: str):
+def remove_download_task(key: str):
     """Remove a download task from tracking."""
     with _download_lock:
-        if filename in _download_tasks:
-            task_id = _download_tasks[filename]
+        if key in _download_tasks:
+            task_id = _download_tasks[key]
             del _download_speeds[task_id]
-            del _download_tasks[filename]
-        _download_start_times.pop(filename, None)
+            del _download_tasks[key]
+        _download_start_times.pop(key, None)
 
 
 def clear_download_tasks():
