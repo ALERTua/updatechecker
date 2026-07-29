@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
+from urllib.parse import urlparse
 
 import psutil
 
@@ -99,12 +100,9 @@ def md5sum(path):
     Returns:
         MD5 hexdigest string or None on failure
     """
-    # Try to convert to Path if it's a string
-    if isinstance(path, str):
-        path = Path(path)
-
-    # Handle URL case
-    if not isinstance(path, Path):
+    # URLs are downloaded to a temp file and hashed from there. Detect them
+    # by scheme: Path() happily accepts URL strings, so types can't tell.
+    if isinstance(path, str) and urlparse(path).scheme in ('http', 'https'):
         log.debug(f"Getting md5 of an url '{path}'")
         if not url_accessible(path):
             log.warning(f"Cannot get an md5 of the url '{path}': url is not accessible")
@@ -130,8 +128,9 @@ def md5sum(path):
 
         path = downloaded_file
 
+    path = Path(path)
     if not path.exists():
-        log.warning("Cannot get md5sum: md5 file doesn't exist")
+        log.warning(f"Cannot get md5sum: file '{path}' doesn't exist")
         return None
 
     log.debug(f"Getting md5 of '{path}'")

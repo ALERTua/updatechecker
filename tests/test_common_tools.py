@@ -2,6 +2,7 @@
 Tests for the common_tools module, specifically file_needs_update function.
 """
 
+import hashlib
 import json
 import tempfile
 import zipfile
@@ -14,6 +15,7 @@ import pytest
 from updatechecker.common_tools import (
     file_needs_update,
     is_filename_archive,
+    md5sum,
     process_running,
 )
 from updatechecker.downloader import GitHubDownloader
@@ -256,6 +258,52 @@ class TestIsFilenameArchive:
 
     def test_nonexistent_non_archive_name(self):
         assert not is_filename_archive('does-not-exist.exe')
+
+
+class TestMd5Sum:
+    """md5sum must handle local paths (str or Path) and http(s) URLs."""
+
+    def test_local_file_as_path(self, tmp_path):
+        f = tmp_path / 'a.bin'
+        f.write_bytes(b'hello')
+        assert md5sum(f) == hashlib.md5(b'hello').hexdigest()
+
+    def test_local_file_as_string(self, tmp_path):
+        f = tmp_path / 'a.bin'
+        f.write_bytes(b'hello')
+        assert md5sum(str(f)) == hashlib.md5(b'hello').hexdigest()
+
+    def test_missing_local_file_returns_none(self, tmp_path):
+        assert md5sum(tmp_path / 'missing.bin') is None
+
+    def test_url_is_downloaded_and_hashed(self, tmp_path):
+        """A URL string must take the download branch, not be treated as a
+        local path (Path() accepts URL strings without complaint)."""
+        content = b'remote content'
+
+        def fake_download(url, destination):
+            Path(destination).write_bytes(content)
+            return Path(destination)
+
+        with (
+            patch('updatechecker.common_tools.url_accessible', return_value=True),
+            patch(
+                'updatechecker.common_tools.url_to_filename',
+                return_value='file.bin',
+            ),
+            patch(
+                'updatechecker.common_tools._http.download_file_from_url',
+                side_effect=fake_download,
+            ),
+            patch('updatechecker.common_tools.constants.TEMP_FOLDER', tmp_path),
+        ):
+            result = md5sum('https://example.com/file.bin')
+
+        assert result == hashlib.md5(content).hexdigest()
+
+    def test_inaccessible_url_returns_none(self):
+        with patch('updatechecker.common_tools.url_accessible', return_value=False):
+            assert md5sum('https://example.com/gone.bin') is None
 
 
 class TestProcessRunning:

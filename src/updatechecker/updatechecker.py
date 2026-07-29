@@ -1,6 +1,8 @@
 import os
 import pprint
+import shlex
 import shutil
+import subprocess
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -93,6 +95,30 @@ def _download_to_target(
     return success
 
 
+def launch_detached(program: str, arguments: str | None = None) -> None:
+    """Launch a program without waiting for it and without a shell.
+
+    No cmd.exe involved: metacharacters in config values aren't interpreted
+    as shell syntax, and program paths with spaces keep working.
+    """
+    if os.name == 'nt':
+        # CreateProcess parses the command line itself; quoting the program
+        # is enough, the argument string is passed through verbatim
+        cmd = f'"{program}" {arguments or ""}'.strip()
+        creationflags = (
+            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        )
+    else:
+        cmd = [program, *shlex.split(arguments or '')]
+        creationflags = 0
+
+    log.debug(f"Launching {cmd}")
+    try:
+        subprocess.Popen(cmd, creationflags=creationflags)
+    except OSError as e:
+        log.warning(f"Couldn't launch '{program}': {e}")
+
+
 def process_entry(entry, force: bool = False, gh_token: str | None = None):
     """Process a single entry for update checking.
 
@@ -110,11 +136,6 @@ def process_entry(entry, force: bool = False, gh_token: str | None = None):
     arguments = entry.arguments
     kill_if_locked = entry.kill_if_locked
     relaunch = entry.relaunch
-
-    def _launch(launch_, arguments_=None):
-        __cmd = f'start "" {launch_} {arguments_ or ""}'
-        log.debug(f"Launching {__cmd}")
-        os.system(__cmd)
 
     # Create appropriate downloader based on entry type
     downloader = DownloaderFactory.create(entry, gh_token)
@@ -168,7 +189,7 @@ def process_entry(entry, force: bool = False, gh_token: str | None = None):
         tools.update_file_metadata(url, target)
         process_archive(entry)
         if launch:
-            _launch(launch, arguments)
+            launch_detached(launch, arguments)
         return
 
     # If HEAD check determined file doesn't need update, skip download
@@ -272,9 +293,9 @@ def process_entry(entry, force: bool = False, gh_token: str | None = None):
 
     if killed:
         if relaunch is True and kill_if_locked is not None:
-            _launch(kill_if_locked, arguments)
+            launch_detached(kill_if_locked, arguments)
     elif launch:
-        _launch(launch, arguments)
+        launch_detached(launch, arguments)
 
 
 def process_archive(entry):

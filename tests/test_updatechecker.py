@@ -4,11 +4,50 @@ from unittest.mock import patch
 
 import yaml
 
-from updatechecker.updatechecker import prepare_entry, updatechecker
+from updatechecker.updatechecker import (
+    launch_detached,
+    prepare_entry,
+    updatechecker,
+)
 
 
 def write_config(path, data):
     path.write_text(yaml.safe_dump(data), encoding='utf-8')
+
+
+class TestLaunchDetached:
+    """Launching must survive paths with spaces and never involve a shell."""
+
+    def test_program_path_with_spaces(self):
+        import os
+
+        with patch('updatechecker.updatechecker.subprocess.Popen') as mock_popen:
+            launch_detached('C:/Program Files/app.exe', '--flag value')
+
+        cmd = mock_popen.call_args.args[0]
+        if os.name == 'nt':
+            assert cmd == '"C:/Program Files/app.exe" --flag value'
+        else:
+            assert cmd == ['C:/Program Files/app.exe', '--flag', 'value']
+
+    def test_no_arguments(self):
+        import os
+
+        with patch('updatechecker.updatechecker.subprocess.Popen') as mock_popen:
+            launch_detached('C:/apps/tool.exe')
+
+        cmd = mock_popen.call_args.args[0]
+        if os.name == 'nt':
+            assert cmd == '"C:/apps/tool.exe"'
+        else:
+            assert cmd == ['C:/apps/tool.exe']
+
+    def test_launch_failure_is_logged_not_raised(self):
+        with patch(
+            'updatechecker.updatechecker.subprocess.Popen',
+            side_effect=OSError('not found'),
+        ):
+            launch_detached('missing.exe')  # must not raise
 
 
 class TestBrokenConfig:
