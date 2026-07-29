@@ -4,6 +4,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from updatechecker.common_tools import unzip_file
 
 
@@ -144,3 +146,39 @@ class TestUnzipFileFlatten:
             assert (extract_to / "rootfile.txt").exists()
             # The versioned folder should exist (normal extraction, not flattened)
             assert (extract_to / "version_1.0.0" / "file1.txt").exists()
+
+
+class TestZipSlipProtection:
+    """Tests that unzip_file refuses to write outside the destination."""
+
+    def test_rejects_parent_traversal(self):
+        """A member with ../ must not be written outside the destination."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "evil.zip"
+            extract_to = Path(temp_dir) / "output"
+
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("../evil.txt", "pwned")
+
+            extract_to.mkdir()
+
+            with pytest.raises(RuntimeError, match="Unsafe extraction path"):
+                unzip_file(zip_path, extract_to)
+
+            assert not (Path(temp_dir) / "evil.txt").exists()
+
+    def test_rejects_sibling_directory_with_common_prefix(self):
+        """A str.startswith check would let 'output-evil' pass for 'output'."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            zip_path = Path(temp_dir) / "evil.zip"
+            extract_to = Path(temp_dir) / "output"
+
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("../output-evil/pwn.txt", "pwned")
+
+            extract_to.mkdir()
+
+            with pytest.raises(RuntimeError, match="Unsafe extraction path"):
+                unzip_file(zip_path, extract_to)
+
+            assert not (Path(temp_dir) / "output-evil").exists()

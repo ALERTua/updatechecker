@@ -4,12 +4,13 @@ Tests for the common_tools module, specifically file_needs_update function.
 
 import json
 import tempfile
+import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from updatechecker.common_tools import file_needs_update
+from updatechecker.common_tools import file_needs_update, is_filename_archive
 from updatechecker.downloader import GitHubDownloader
 
 
@@ -220,3 +221,33 @@ class TestGitPackageToReleases:
         assert len(result) == 2
         assert result[0].tag_name == 'v1.0.0'
         assert result[1].tag_name == 'v0.9.0'
+
+
+class TestIsFilenameArchive:
+    """Test archive detection by extension and zip magic number."""
+
+    def test_archive_extensions(self):
+        assert is_filename_archive('file.zip')
+        assert is_filename_archive('file.7z')
+        assert is_filename_archive('file.rar')
+
+    def test_extension_is_case_insensitive(self):
+        assert is_filename_archive('FILE.ZIP')
+
+    def test_extension_substring_is_not_archive(self):
+        # '.zip' as a mere substring used to match ('my.zipper.exe')
+        assert not is_filename_archive('my.zipper.exe')
+
+    def test_real_zip_without_extension(self, tmp_path):
+        zip_path = tmp_path / 'archive.dat'
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            zf.writestr('a.txt', 'content')
+        assert is_filename_archive(zip_path)
+
+    def test_non_archive_file(self, tmp_path):
+        plain = tmp_path / 'plain.txt'
+        plain.write_text('hello')
+        assert not is_filename_archive(plain)
+
+    def test_nonexistent_non_archive_name(self):
+        assert not is_filename_archive('does-not-exist.exe')

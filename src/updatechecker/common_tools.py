@@ -199,11 +199,15 @@ def unzip_file(
                 return
 
         target_path = destination_path / member
-        target_path.parent.mkdir(parents=True, exist_ok=True)
 
         resolved_target = target_path.resolve()
-        if not str(resolved_target).startswith(str(dest_resolved)):
+        # is_relative_to, not str.startswith: a prefix check lets
+        # "C:\apps\tool-evil" pass for destination "C:\apps\tool" (Zip Slip)
+        if not resolved_target.is_relative_to(dest_resolved):
             raise RuntimeError(f"Unsafe extraction path: {member}")
+
+        # Create parent dirs only after the path passed the safety check
+        target_path.parent.mkdir(parents=True, exist_ok=True)
 
         # IMPORTANT: open ZipFile inside thread
         with zipfile.ZipFile(source_path) as zf:
@@ -217,11 +221,17 @@ def unzip_file(
         list(executor.map(extract_one, selected_members))
 
 
-def is_filename_archive(filename):
+def is_filename_archive(filename) -> bool:
+    """Check whether a path looks like (or is) an archive.
+
+    Checks the file extension first; falls back to zip magic-number
+    sniffing when the path points to an existing file.
+    """
+    path = Path(filename)
     archive_exts = ('.zip', '.7z', '.rar')
-    return any(ext for ext in archive_exts if ext in filename) or zipfile.is_zipfile(
-        str(filename)
-    )
+    if path.suffix.lower() in archive_exts:
+        return True
+    return path.is_file() and zipfile.is_zipfile(path)
 
 
 def get_metadata_path(target_path: Path | str) -> Path:

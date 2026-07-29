@@ -278,7 +278,7 @@ def process_archive(entry):
     flatten = entry.flatten
     target = Path(entry.target)
 
-    if not (tools.is_filename_archive(target.name) and unzip_target is not None):
+    if not (tools.is_filename_archive(target) and unzip_target is not None):
         return
 
     if not zipfile.is_zipfile(target):
