@@ -37,11 +37,10 @@ class Entry(BaseModel):
 
     @field_validator('unzip_target')
     def validate_unzip_target(cls, v: str):
+        # No existence check: unzip_file creates the directory, and requiring
+        # it up front broke entries on their first run on a fresh machine.
         if v:
-            v = Path(v)
-            if not v.exists() or not v.is_dir():
-                raise ValueError(f"unzip_target '{v}' must be an existing directory")
-            v = str(v)
+            v = str(Path(v))
         return v
 
     @field_validator('kill_if_locked')
@@ -152,6 +151,34 @@ def substitute_variables(
     return VARIABLE_PATTERN.sub(replace_var, text)
 
 
+def resolve_entry_variables(
+    entry_vars: dict, variables: dict, error_context: str = 'entry'
+) -> dict:
+    """Resolve entry-specific variables against global + entry variables.
+
+    Expands %ENV_VAR% placeholders first, then resolves {{variable}}
+    references iteratively; entry variables take priority over global ones
+    and may reference each other. Shared by config validation and the
+    runtime entry preparation so both accept the same configs.
+    """
+    expanded = {k: expand_env_variables(v) for k, v in entry_vars.items()}
+
+    max_iterations = 10
+    for key, value in expanded.items():
+        # Rebuilt per key so later variables see earlier resolved values
+        merged_for_resolution = {**variables, **expanded}
+        for _ in range(max_iterations):
+            new_value = substitute_variables(
+                value, merged_for_resolution, error_context
+            )
+            if new_value == value:
+                break
+            value = new_value
+        expanded[key] = value
+
+    return expanded
+
+
 def entry_validator(entries, variables=None):
     """Validate entries and substitute variables in path fields."""
     if variables is None:
@@ -163,24 +190,9 @@ def entry_validator(entries, variables=None):
         entry = entry_data.copy()
         entry_vars = entry.pop('variables', None) or {}
 
-        # Expand environment variables in entry-specific variables
-        expanded_entry_vars = {
-            k: expand_env_variables(v) for k, v in entry_vars.items()
-        }
-
-        # Expand variable references in entry-specific variables iteratively
-        max_iterations = 10
-        for key, value in expanded_entry_vars.items():
-            # Merge global vars with entry vars for resolution (entry vars take priority)
-            merged_for_resolution = {**variables, **expanded_entry_vars}
-            for _ in range(max_iterations):
-                new_value = substitute_variables(
-                    value, merged_for_resolution, f"entry '{entry_name}'"
-                )
-                if new_value == value:
-                    break
-                value = new_value
-            expanded_entry_vars[key] = value
+        expanded_entry_vars = resolve_entry_variables(
+            entry_vars, variables, f"entry '{entry_name}'"
+        )
 
         # Merge variables (entry-specific take priority)
         merged = {**variables, **expanded_entry_vars}
@@ -216,15 +228,23 @@ class Config:
         """Read YAML data directly from config file.
 
         Returns the full YAML data dict, or empty dict if file not found.
+
+        Raises:
+            OSError | yaml.YAMLError: If the file exists but can't be read or
+                parsed. A broken config must fail loudly - swallowing it made
+                the tool silently do nothing.
         """
-        if self._config_path.exists():
-            try:
-                with open(self._config_path, 'r', encoding='utf-8') as f:
-                    data = yaml.safe_load(f)
-                    return data or {}
-            except (OSError, yaml.YAMLError) as e:
-                log.warning(f"Couldn't read config '{self._config_path}': {e}")
-        return {}
+        if not self._config_path.exists():
+            log.warning(f"Config file '{self._config_path}' not found")
+            return {}
+
+        try:
+            with open(self._config_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+                return data or {}
+        except (OSError, yaml.YAMLError) as e:
+            log.error(f"Couldn't read config '{self._config_path}': {e}")
+            raise
 
     @property
     def entries(self) -> dict:

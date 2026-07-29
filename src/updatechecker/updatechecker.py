@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import psutil
+import yaml
 from tenacity import Retrying, retry_if_exception_type, stop_after_attempt, wait_fixed
 
 from . import common_tools as tools
@@ -14,7 +15,7 @@ from .config import (
     Config,
     Entry,
     config_filename,
-    expand_env_variables,
+    resolve_entry_variables,
     substitute_variables,
 )
 from .downloader import DownloaderFactory
@@ -39,16 +40,14 @@ def prepare_entry(entry_dict: dict, name: str, variables: dict) -> Entry:
     # Entry-specific variables take priority over global variables
     entry_vars = entry.pop('variables', {}) or {}
 
-    # Expand environment variables in entry-specific variables
-    for key, value in entry_vars.items():
-        entry_vars[key] = expand_env_variables(value)
-
-    # Expand config variable references in entry-specific variables
-    for key, value in entry_vars.items():
-        entry_vars[key] = substitute_variables(value, variables)
+    # Same resolution as config validation (entry vars may reference each
+    # other), so a config that validates also works at runtime
+    resolved_entry_vars = resolve_entry_variables(
+        entry_vars, variables, f"entry '{name}'"
+    )
 
     # Merge: global variables first, then entry-specific override them
-    merged_variables = {**variables, **entry_vars}
+    merged_variables = {**variables, **resolved_entry_vars}
 
     # Path fields that should have variable substitution
     path_fields = ['target', 'unzip_target', 'kill_if_locked', 'launch', 'arguments']
@@ -353,7 +352,11 @@ def updatechecker(
         config_path = get_default_config_path()
 
     # Create Config instance
-    config = Config(config_path)
+    try:
+        config = Config(config_path)
+    except (OSError, yaml.YAMLError):
+        # Already logged by Config; a broken config fails the whole run
+        return 1
     log.debug(f"Config path: {config_path}")
 
     # Resolve GitHub token: CLI arg > config > env var
