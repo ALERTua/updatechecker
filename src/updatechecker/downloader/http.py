@@ -134,7 +134,7 @@ class HttpDownloader:
         for chunk_file in chunk_files:
             try:
                 chunk_file.unlink(missing_ok=True)
-            except Exception as e:
+            except OSError as e:
                 log.debug(f"Failed to clean up chunk file {chunk_file}: {e}")
 
     def check_server_ranges(self, url: str) -> bool:
@@ -152,7 +152,7 @@ class HttpDownloader:
             ) as response:
                 accept_ranges = response.headers.get("Accept-Ranges", "none")
                 return accept_ranges.lower() == "bytes"
-        except Exception as e:
+        except (httpx.HTTPError, httpx.InvalidURL) as e:
             log.debug(f"Failed to check Range support for '{url}': {e}")
             return False
 
@@ -172,7 +172,7 @@ class HttpDownloader:
                 content_length = response.headers.get("Content-Length")
                 if content_length:
                     return int(content_length)
-        except Exception as e:
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError) as e:
             log.debug(f"Failed to get file size for '{url}': {e}")
         return None
 
@@ -228,7 +228,9 @@ class HttpDownloader:
 
             log.stop_download_progress()
             log.remove_download_task(filename)
-        except Exception as e:
+        # Deliberate broad catch: this is the resilience boundary of the
+        # downloader — callers rely on None for ANY failure kind.
+        except Exception as e:  # noqa: BLE001
             log.error(f"Error downloading '{source}' to '{destination}'\n{type(e)} {e}")
             return None
 
@@ -378,7 +380,7 @@ class HttpDownloader:
                     try:
                         chunk_file = future.result()
                         chunk_files.append(chunk_file)
-                    except Exception as e:
+                    except (httpx.HTTPError, RuntimeError, OSError) as e:
                         log.error(f"Chunk {chunk_idx} failed: {e}")
                         # Fall back to single connection
                         log.warning("Falling back to single connection download")
@@ -405,7 +407,7 @@ class HttpDownloader:
         try:
             response = httpx.head(url, timeout=30.0, follow_redirects=True)
             return response.status_code == 200
-        except Exception as e:
+        except (httpx.HTTPError, httpx.InvalidURL) as e:
             log.debug(f"URL '{url}' not accessible: {e}")
             return False
 
@@ -484,6 +486,6 @@ class HttpDownloader:
             )
 
             return result
-        except Exception as e:
+        except (httpx.HTTPError, httpx.InvalidURL) as e:
             log.debug(f"Failed to get headers for '{url}': {e}")
             return None

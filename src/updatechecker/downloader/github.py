@@ -54,7 +54,9 @@ class GitHubDownloader(HttpDownloader):
         try:
             repo = self._client.get_repo(package)
             return repo.full_name
-        except Exception as e:
+        # Deliberate broad catch: any API/network failure (PyGithub or requests
+        # internals) should skip the entry with a warning, not crash the run.
+        except Exception as e:  # noqa: BLE001
             log.warning(f"'{package}' is not a valid GitHub repository: {e}")
             return None
 
@@ -71,7 +73,7 @@ class GitHubDownloader(HttpDownloader):
             repo = self._client.get_repo(package)
             releases = repo.get_releases()
             return list(releases)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 (see validate_package)
             token_str = 'with token' if self._token else 'without token'
             log.warning(f"GitHub API error for package '{package}' {token_str}: {e}")
             return None
@@ -88,7 +90,7 @@ class GitHubDownloader(HttpDownloader):
         try:
             repo = self._client.get_repo(package)
             return repo.get_latest_release()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 (see validate_package)
             token_str = 'with token' if self._token else 'without token'
             log.warning(f"GitHub API error for package '{package}' {token_str}: {e}")
             return None
@@ -116,6 +118,6 @@ class GitHubDownloader(HttpDownloader):
 
             log.warning(f"No assets matching '{asset_pattern}' found in release")
             return None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 (see validate_package)
             log.warning(f"Couldn't get asset url for '{asset_pattern}': {e}")
             return None

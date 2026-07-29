@@ -6,6 +6,8 @@ from urllib.parse import urlparse
 import yaml
 from pydantic import BaseModel, field_validator, model_validator
 
+from .logger import log
+
 config_dirname = 'updatechecker'
 config_filename = f'{config_dirname}.yaml'
 
@@ -64,12 +66,15 @@ class Variables(BaseModel):
     def validate_values(cls, v):
         if v is None:
             return {}
+        # pydantic only converts ValueError (not TypeError) into validation errors
         if not isinstance(v, dict):
-            raise ValueError("Variables must be a dictionary")
+            raise ValueError("Variables must be a dictionary")  # noqa: TRY004
         # Validate all values are strings
         for key, value in v.items():
             if not isinstance(value, str):
-                raise ValueError(f"Variable '{key}' must have a string value")
+                raise ValueError(  # noqa: TRY004
+                    f"Variable '{key}' must have a string value"
+                )
         return v
 
 
@@ -156,8 +161,7 @@ def entry_validator(entries, variables=None):
 
         # Expand variable references in entry-specific variables iteratively
         max_iterations = 10
-        for key in expanded_entry_vars:
-            value = expanded_entry_vars[key]
+        for key, value in expanded_entry_vars.items():
             # Merge global vars with entry vars for resolution (entry vars take priority)
             merged_for_resolution = {**variables, **expanded_entry_vars}
             for _ in range(max_iterations):
@@ -209,8 +213,8 @@ class Config:
                 with open(self._config_path, 'r', encoding='utf-8') as f:
                     data = yaml.safe_load(f)
                     return data or {}
-            except Exception:
-                pass
+            except (OSError, yaml.YAMLError) as e:
+                log.warning(f"Couldn't read config '{self._config_path}': {e}")
         return {}
 
     @property
@@ -292,8 +296,8 @@ def _read_yaml_data() -> dict:
                 with open(config_file, 'r', encoding='utf-8') as f:
                     data = yaml.safe_load(f)
                     return data or {}
-            except Exception:
-                pass
+            except (OSError, yaml.YAMLError) as e:
+                log.warning(f"Couldn't read config '{config_file}': {e}")
     return {}
 
 

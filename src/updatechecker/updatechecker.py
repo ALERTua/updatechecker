@@ -235,7 +235,7 @@ def process_entry(entry, force: bool = False, gh_token: str | None = None):
     killed = False
     try:
         target.rename(bak_file)
-    except Exception as e:
+    except OSError as e:
         if not kill_if_locked:
             log.warning(f"Couldn't back up '{target}': {type(e)} {e}")
             return
@@ -311,7 +311,9 @@ def process_archive(entry):
                 tools.unzip_file(
                     target, unzip_target, password=archive_password, flatten=flatten
                 )
-    except Exception as e:
+    # Mirrors retry_if_exception_type(Exception) above: whatever survived the
+    # 4 attempts is logged and swallowed so one archive doesn't crash the run.
+    except Exception as e:  # noqa: BLE001
         log.warning(
             f"Couldn't unzip '{target}' to '{unzip_target}' after 4 attempts: "
             f"{type(e).__name__} {e}. Giving up."

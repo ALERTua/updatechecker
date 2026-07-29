@@ -139,14 +139,12 @@ def get_progress() -> Progress:
 
 def start_download_progress():
     """Start the download progress display."""
-    global _progress
     if _progress is not None and not _progress.live.is_started:
         _progress.start()
 
 
 def stop_download_progress():
     """Stop the download progress display."""
-    global _progress
     if _progress is not None and _progress.live.is_started:
         _progress.stop()
 
@@ -159,8 +157,6 @@ def update_download_progress(filename: str, downloaded: int, total: int):
         downloaded: Number of bytes downloaded
         total: Total size of the file in bytes
     """
-    global _download_tasks, _download_start_times, _download_speeds
-
     with _download_lock:
         progress = get_progress()
 
@@ -193,7 +189,6 @@ def update_download_progress(filename: str, downloaded: int, total: int):
 
 def remove_download_task(filename: str):
     """Remove a download task from tracking."""
-    global _download_tasks, _download_start_times, _download_speeds
     with _download_lock:
         if filename in _download_tasks:
             task_id = _download_tasks[filename]
@@ -204,7 +199,6 @@ def remove_download_task(filename: str):
 
 def clear_download_tasks():
     """Clear all download tasks."""
-    global _download_tasks, _download_start_times, _download_speeds
     with _download_lock:
         _download_tasks.clear()
         _download_start_times.clear()

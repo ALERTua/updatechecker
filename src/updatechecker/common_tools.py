@@ -39,7 +39,7 @@ def process_running(executable=None, exe_path=None, cmdline=None):
         if exe_path is not None:
             try:
                 process_path = process.exe()
-            except Exception as e:
+            except (psutil.Error, OSError) as e:
                 log.exception(e)
                 continue
             if Path(process_path) != Path(exe_path):
@@ -48,7 +48,7 @@ def process_running(executable=None, exe_path=None, cmdline=None):
         if cmdline is not None:
             try:
                 process_cmdline = process.cmdline()
-            except Exception as e:
+            except (psutil.Error, OSError) as e:
                 log.exception(e)
                 continue
             normalized_cmdline = [
@@ -82,10 +82,7 @@ def md5sum(path):
     """
     # Try to convert to Path if it's a string
     if isinstance(path, str):
-        try:
-            path = Path(path)
-        except Exception:
-            pass  # Keep as string, treat as URL
+        path = Path(path)
 
     # Handle URL case
     if not isinstance(path, Path):
@@ -250,7 +247,7 @@ def delete_metadata(target_path: Path | str) -> bool:
         metadata_path.unlink()
         log.debug(f"Deleted metadata file '{metadata_path}'")
         return True
-    except Exception as e:
+    except OSError as e:
         log.warning(
             f"Failed to delete metadata '{metadata_path}': {type(e).__name__} {e}"
         )
@@ -282,7 +279,7 @@ def save_metadata(target_path: Path | str, headers: dict, url: str) -> bool:
             json.dump(metadata, f, indent=2)
         log.debug(f"Saved metadata to '{metadata_path}'")
         return True
-    except Exception as e:
+    except (OSError, TypeError) as e:
         log.warning(
             f"Failed to save metadata to '{metadata_path}': {type(e).__name__} {e}"
         )
@@ -313,7 +310,7 @@ def load_metadata(target_path: Path | str) -> dict | None:
     except json.JSONDecodeError as e:
         log.warning(f"Corrupted metadata file '{metadata_path}': {e}")
         return None
-    except Exception as e:
+    except (OSError, ValueError) as e:
         log.warning(
             f"Failed to load metadata from '{metadata_path}': {type(e).__name__} {e}"
         )
