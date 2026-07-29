@@ -234,9 +234,17 @@ class TestChunkFileCleanup:
         assert not chunk2.exists()
 
 
+class _QuietThreadingHTTPServer(ThreadingHTTPServer):
+    """Test server that doesn't print tracebacks when the client aborts
+    a connection mid-response (expected for cancelled chunk downloads)."""
+
+    def handle_error(self, request, client_address):
+        pass
+
+
 def _serve(handler_class):
     """Start a local threading HTTP server; return (server, base_url)."""
-    server = ThreadingHTTPServer(('127.0.0.1', 0), handler_class)
+    server = _QuietThreadingHTTPServer(('127.0.0.1', 0), handler_class)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, f'http://127.0.0.1:{server.server_port}'

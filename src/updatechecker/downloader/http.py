@@ -12,7 +12,11 @@ from urllib.parse import urlparse
 import httpx
 
 from .. import constants
-from ..logger import log
+from ..logger import download_progress, log
+
+
+class _ChunkCancelled(Exception):
+    """Internal: chunk download aborted because a sibling chunk failed."""
 
 
 class HttpDownloader:
@@ -57,6 +61,7 @@ class HttpDownloader:
         chunk_num: int,
         temp_dir: Path,
         progress_callback: Callable | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> Path:
         """Download a specific byte range from URL.
 
@@ -67,6 +72,8 @@ class HttpDownloader:
             chunk_num: Chunk number for filename
             temp_dir: Temporary directory for chunk files
             progress_callback: Optional callback(completed, total) for progress
+            cancel_event: When set, the chunk aborts with _ChunkCancelled
+                (a sibling chunk failed and the download is falling back)
 
         Returns:
             Path to downloaded chunk file
@@ -90,6 +97,8 @@ class HttpDownloader:
                 downloaded = 0
                 with open(chunk_file, 'wb') as f:
                     for chunk in response.iter_bytes(chunk_size=8192):
+                        if cancel_event is not None and cancel_event.is_set():
+                            raise _ChunkCancelled(chunk_num)
                         f.write(chunk)
                         downloaded += len(chunk)
                         if progress_callback:
@@ -99,6 +108,8 @@ class HttpDownloader:
                 raise RuntimeError(
                     f"Chunk size mismatch: got {downloaded} bytes, expected {chunk_size}"
                 )
+        except _ChunkCancelled:
+            raise
         except Exception as e:
             log.warning(f"Failed to download chunk {chunk_num} ({start}-{end}): {e}")
             raise
@@ -197,19 +208,22 @@ class HttpDownloader:
         Returns:
             Path to downloaded file, or None on failure
         """
-        # Key progress by destination: two downloads may share a filename
+        # Progress rows are keyed by destination: two downloads may share a
+        # display name but never a target path
         task_key = str(destination)
+        # A caller-supplied callback owns progress reporting; only manage
+        # the shared display when using our internal one
+        manage_display = progress_callback is None
 
         def _progress_callback(filename: str, downloaded: int, total: int):
             """Progress callback for download."""
-            if total > 0:
-                log.update_download_progress(
-                    task_key, downloaded, total, description=filename
-                )
+            download_progress.update(task_key, downloaded, total if total > 0 else None)
 
+        if manage_display:
+            download_progress.begin(task_key, self._display_name(source))
+
+        success = False
         try:
-            # Start progress display
-            log.start_download_progress()
             # Determine chunked setting based on file size if not specified
             should_chunk = chunked_download
             file_size = None
@@ -229,17 +243,17 @@ class HttpDownloader:
                 chunked=should_chunk,
                 progress_callback=progress_callback or _progress_callback,
                 file_size=file_size,
+                task_key=task_key if manage_display else None,
             )
+            success = True
         # Deliberate broad catch: this is the resilience boundary of the
         # downloader — callers rely on None for ANY failure kind.
         except Exception as e:  # noqa: BLE001
             log.error(f"Error downloading '{source}' to '{destination}'\n{type(e)} {e}")
             return None
         finally:
-            # Previously only ran on success, so a failed download left the
-            # progress display running and its task row behind
-            log.stop_download_progress()
-            log.remove_download_task(task_key)
+            if manage_display:
+                download_progress.finish(task_key, success=success)
 
         return Path(destination)
 
@@ -256,6 +270,7 @@ class HttpDownloader:
         progress_callback: Callable | None = None,
         chunk_size: int = constants.DEFAULT_CHUNK_SIZE,
         file_size: int | None = None,
+        task_key: str | None = None,
     ) -> Path:
         """Download file using httpx with optional chunked parallel download.
 
@@ -266,6 +281,8 @@ class HttpDownloader:
             progress_callback: Optional callback(filename, downloaded, total) for progress
             chunk_size: Size of each chunk in bytes
             file_size: Known file size in bytes; fetched via HEAD when None
+            task_key: Progress row key, used to reset the row when a chunked
+                download falls back to a single connection
 
         Returns:
             Path to downloaded file
@@ -295,7 +312,13 @@ class HttpDownloader:
 
         # Parallel chunked download
         return self._download_parallel(
-            url, destination, file_size, filename, progress_callback, chunk_size
+            url,
+            destination,
+            file_size,
+            filename,
+            progress_callback,
+            chunk_size,
+            task_key=task_key,
         )
 
     def _download_single(
@@ -338,6 +361,7 @@ class HttpDownloader:
         filename: str,
         progress_callback: Callable | None = None,
         chunk_size: int = constants.DEFAULT_CHUNK_SIZE,
+        task_key: str | None = None,
     ) -> Path:
         """Parallel chunked download with httpx."""
         chunks = self.calculate_chunks(file_size, chunk_size)
@@ -353,8 +377,11 @@ class HttpDownloader:
 
         # Track total progress across all chunks with thread-safe locking
         completed_chunks = [0] * num_chunks
-        total_downloaded = [0]  # Use list to allow modification in nested function
         progress_lock = threading.Lock()
+        # Set on first failure so the sibling chunk threads abort instead of
+        # keeping downloading and racing the single-connection fallback for
+        # the same progress row
+        cancel_event = threading.Event()
 
         try:
             with ThreadPoolExecutor(max_workers=num_chunks) as executor:
@@ -364,13 +391,14 @@ class HttpDownloader:
                     # Create callback for this chunk
                     def make_callback(idx, lock):
                         def callback(downloaded, total):
+                            # Capture the sum under the lock: reading it
+                            # afterwards can deliver a stale (smaller) value
+                            # and make the bar wiggle backwards
                             with lock:
                                 completed_chunks[idx] = downloaded
-                                total_downloaded[0] = sum(completed_chunks)
+                                current_total = sum(completed_chunks)
                             if progress_callback:
-                                progress_callback(
-                                    filename, total_downloaded[0], file_size
-                                )
+                                progress_callback(filename, current_total, file_size)
 
                         return callback
 
@@ -382,22 +410,35 @@ class HttpDownloader:
                         i,
                         chunk_dir,
                         make_callback(i, progress_lock),
+                        cancel_event,
                     )
                     futures.append((i, future))
 
                 # Collect all results after all downloads are submitted
                 chunk_files = []
+                failed = False
                 for chunk_idx, future in futures:
                     try:
-                        chunk_file = future.result()
-                        chunk_files.append(chunk_file)
+                        chunk_files.append(future.result())
+                    except _ChunkCancelled:
+                        pass
                     except (httpx.HTTPError, RuntimeError, OSError) as e:
                         log.error(f"Chunk {chunk_idx} failed: {e}")
-                        # Fall back to single connection
-                        log.warning("Falling back to single connection download")
-                        return self._download_single(
-                            url, destination, filename, progress_callback
-                        )
+                        failed = True
+                        cancel_event.set()
+                # Leaving the with-block waits for the remaining chunk
+                # threads; they abort promptly via cancel_event
+
+            if failed:
+                # Fall back to single connection
+                log.warning("Falling back to single connection download")
+                if task_key is not None:
+                    # Restart the progress row (clock and speed included)
+                    # instead of leaving it at the chunks' partial total
+                    download_progress.reset(task_key, total=file_size)
+                return self._download_single(
+                    url, destination, filename, progress_callback
+                )
 
             # Combine chunks after all downloads complete
             self.combine_chunks(chunk_files, destination)
