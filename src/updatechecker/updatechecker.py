@@ -337,6 +337,9 @@ def updatechecker(
         entries: List of entry names to check (default: all)
         force: Force re-download, skip HEAD/MD5 checks
         gh_token: GitHub token for API requests (overrides config and env var)
+
+    Returns:
+        Number of failed entries (0 when everything succeeded).
     """
     # Use provided path or default
     if config_path is None:
@@ -355,10 +358,18 @@ def updatechecker(
     # Get variables from config
     variables = config.get_variables()
 
-    config_entries = [
-        prepare_entry(config_entry, config_entry_name, variables)
-        for config_entry_name, config_entry in config.entries.items()
-    ]
+    # One invalid entry (bad variable, validation error) must not prevent
+    # the remaining entries from being processed.
+    prepare_failed = 0
+    config_entries = []
+    for config_entry_name, config_entry in config.entries.items():
+        try:
+            config_entries.append(
+                prepare_entry(config_entry, config_entry_name, variables)
+            )
+        except Exception as e:  # noqa: BLE001 - resilience boundary per entry
+            log.error(f"Skipping entry '{config_entry_name}': {type(e).__name__} {e}")
+            prepare_failed += 1
 
     # Filter entries if specified
     if entries:
@@ -366,17 +377,25 @@ def updatechecker(
         config_entries = [e for e in config_entries if e.name in entry_names_set]
         if not config_entries:
             log.warning(f"No matching entries found for: {entries}")
-            return
+            return prepare_failed
+
+    def process_entry_safe(entry) -> bool:
+        try:
+            process_entry(entry, force, resolved_gh_token)
+        except Exception as e:  # noqa: BLE001 - resilience boundary per entry
+            log.error(f"Entry '{entry.name}' failed: {type(e).__name__} {e}")
+            return False
+        return True
 
     if _async:
-        threads = threads or psutil.cpu_count() - 1
+        threads = threads or max(1, (psutil.cpu_count() or 2) - 1)
         with ThreadPoolExecutor(max_workers=threads) as executor:
             # Pass force flag and gh_token to each entry processing
-            list(
-                executor.map(
-                    lambda e: process_entry(e, force, resolved_gh_token), config_entries
-                )
-            )
+            results = list(executor.map(process_entry_safe, config_entries))
     else:
-        for entry in config_entries:
-            process_entry(entry, force, resolved_gh_token)
+        results = [process_entry_safe(entry) for entry in config_entries]
+
+    failed = prepare_failed + sum(1 for ok in results if not ok)
+    if failed:
+        log.warning(f"{failed} of {len(results) + prepare_failed} entries failed")
+    return failed

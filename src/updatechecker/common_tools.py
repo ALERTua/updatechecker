@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import shutil
 import zipfile
 from collections.abc import Iterable
@@ -198,12 +199,13 @@ def unzip_file(
             if not member:
                 return
 
-        target_path = destination_path / member
-
-        resolved_target = target_path.resolve()
+        # Purely lexical containment check: no filesystem access, so it can't
+        # race with concurrent mkdir from other extraction threads (resolve()
+        # canonicalizes inconsistently while a parent dir is being created).
         # is_relative_to, not str.startswith: a prefix check lets
         # "C:\apps\tool-evil" pass for destination "C:\apps\tool" (Zip Slip)
-        if not resolved_target.is_relative_to(dest_resolved):
+        target_path = Path(os.path.normpath(dest_resolved / member))
+        if not target_path.is_relative_to(dest_resolved):
             raise RuntimeError(f"Unsafe extraction path: {member}")
 
         # Create parent dirs only after the path passed the safety check

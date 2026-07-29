@@ -89,7 +89,7 @@ def cli(
     log.debug(f"GH Token: {'provided' if gh_token else 'not provided'}")
 
     # Call the main function with parsed arguments
-    updatechecker(
+    failed = updatechecker(
         config_path=config,
         _async=async_mode,
         threads=threads,
@@ -97,6 +97,8 @@ def cli(
         force=force,
         gh_token=gh_token,
     )
+    if failed:
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
