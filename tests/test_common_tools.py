@@ -4,6 +4,7 @@ Tests for the common_tools module, specifically file_needs_update function.
 
 import hashlib
 import json
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
@@ -336,7 +337,23 @@ class TestProcessRunning:
 
         assert result == []
 
-    def test_matching_by_exe_path(self):
+    def test_matching_by_exe_path(self, tmp_path):
+        exe = str(tmp_path / 'app.exe')
+        proc = MagicMock()
+        proc.name.return_value = 'app.exe'
+        proc.exe.return_value = exe
+
+        with patch(
+            'updatechecker.common_tools.psutil.process_iter',
+            return_value=[proc],
+        ):
+            result = process_running(exe_path=exe)
+
+        assert result == [proc]
+
+    @pytest.mark.skipif(sys.platform != 'win32', reason='Windows path semantics')
+    def test_matching_by_exe_path_mixed_separators(self):
+        """WindowsPath equates / and \\ separators; PosixPath doesn't."""
         proc = MagicMock()
         proc.name.return_value = 'app.exe'
         proc.exe.return_value = 'C:\\x\\app.exe'
