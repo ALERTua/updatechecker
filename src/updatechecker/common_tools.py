@@ -32,44 +32,62 @@ def process_running(executable=None, exe_path=None, cmdline=None):
     """
     output_processes = []
     for process in psutil.process_iter():
-        process_name = process.name()
+        # Any process can disappear or deny access mid-iteration (system
+        # processes routinely deny exe()/cmdline() on Windows); skip it
+        # instead of crashing the whole scan.
+        try:
+            process_name = process.name()
 
-        if executable is not None and process_name.lower() != executable.lower():
+            if executable is not None and process_name.lower() != executable.lower():
+                continue
+
+            if exe_path is not None and Path(process.exe()) != Path(exe_path):
+                continue
+
+            if cmdline is not None:
+                normalized_cmdline = [
+                    _cmdln.lower().replace('\\', '/').strip('/')
+                    for _cmdln in process.cmdline()
+                ]
+                if (
+                    cmdline.lower().replace('\\', '/').strip('/')
+                    not in normalized_cmdline
+                ):
+                    continue
+        except (psutil.Error, OSError):
             continue
-
-        if exe_path is not None:
-            try:
-                process_path = process.exe()
-            except (psutil.Error, OSError) as e:
-                log.exception(e)
-                continue
-            if Path(process_path) != Path(exe_path):
-                continue
-
-        if cmdline is not None:
-            try:
-                process_cmdline = process.cmdline()
-            except (psutil.Error, OSError) as e:
-                log.exception(e)
-                continue
-            normalized_cmdline = [
-                _cmdln.lower().replace('\\', '/').strip('/')
-                for _cmdln in process_cmdline
-            ]
-            if cmdline.lower().replace('\\', '/').strip('/') not in normalized_cmdline:
-                continue
 
         output_processes.append(process)
     return output_processes
 
 
-def kill_process(executable=None, exe_path=None, cmdline=None):
+def kill_process(
+    executable=None, exe_path=None, cmdline=None, wait_timeout: float = 10
+) -> bool:
+    """Kill matching processes and wait for them to terminate.
+
+    Returns:
+        True if at least one matching process was found and killed.
+    """
     running_processes = process_running(
         executable=executable, exe_path=exe_path, cmdline=cmdline
     )
+    if not running_processes:
+        return False
+
     for process in running_processes:
         log.warning(f"Killing process {process.pid}")
-        process.kill()
+        try:
+            process.kill()
+        except psutil.Error as e:
+            log.warning(f"Couldn't kill process {process.pid}: {e}")
+
+    # Killing is asynchronous: without waiting, the caller retries file
+    # operations while the process still holds its locks.
+    _, alive = psutil.wait_procs(running_processes, timeout=wait_timeout)
+    for process in alive:
+        log.warning(f"Process {process.pid} is still alive after kill")
+    return True
 
 
 def md5sum(path):

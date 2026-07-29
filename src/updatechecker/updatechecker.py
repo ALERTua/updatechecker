@@ -240,10 +240,17 @@ def process_entry(entry, force: bool = False, gh_token: str | None = None):
             log.warning(f"Couldn't back up '{target}': {type(e)} {e}")
             return
 
-        proc_running = tools.process_running(exe_path=kill_if_locked)
-        if proc_running:
-            tools.kill_process(exe_path=kill_if_locked)
-            killed = True
+        killed = tools.kill_process(exe_path=kill_if_locked)
+
+        # kill_process waited for termination - the lock should be gone now
+        try:
+            target.rename(bak_file)
+        except OSError as retry_e:
+            log.warning(
+                f"Couldn't back up '{target}' even after killing "
+                f"'{kill_if_locked}': {type(retry_e).__name__} {retry_e}"
+            )
+            return
 
     if temp_file.exists():
         log.debug(f"Moving '{temp_file}' to '{target}'")
@@ -296,7 +303,7 @@ def process_archive(entry):
             f"{type(exc).__name__} {exc}. "
             f"Attempt {retry_state.attempt_number}, retrying in 3s."
         )
-        if kill_if_locked and tools.process_running(exe_path=kill_if_locked):
+        if kill_if_locked:
             tools.kill_process(exe_path=kill_if_locked)
 
     try:

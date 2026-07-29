@@ -44,3 +44,30 @@ class TestConfigNoRecursion:
         if 'gw2_dir' in variables and 'games_dir' in variables:
             # The variable should have been resolved, not contain {{...}}
             assert '{{' not in variables['gw2_dir']
+
+
+class TestKillIfLockedValidation:
+    """kill_if_locked must be an executable path, not a bare boolean."""
+
+    def _entry(self, **kwargs):
+        from updatechecker.config import Entry
+
+        return Entry(
+            name='test',
+            url='https://example.com/file.zip',
+            target='./file.zip',
+            **kwargs,
+        )
+
+    def test_true_is_rejected(self):
+        import pytest
+
+        with pytest.raises(ValueError, match='kill_if_locked'):
+            self._entry(kill_if_locked=True)
+
+    def test_false_is_normalized_to_none(self):
+        assert self._entry(kill_if_locked=False).kill_if_locked is None
+
+    def test_path_is_kept(self):
+        entry = self._entry(kill_if_locked='C:/apps/tool.exe')
+        assert entry.kill_if_locked == 'C:/apps/tool.exe'

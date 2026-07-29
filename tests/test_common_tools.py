@@ -8,9 +8,14 @@ import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import psutil
 import pytest
 
-from updatechecker.common_tools import file_needs_update, is_filename_archive
+from updatechecker.common_tools import (
+    file_needs_update,
+    is_filename_archive,
+    process_running,
+)
 from updatechecker.downloader import GitHubDownloader
 
 
@@ -251,3 +256,47 @@ class TestIsFilenameArchive:
 
     def test_nonexistent_non_archive_name(self):
         assert not is_filename_archive('does-not-exist.exe')
+
+
+class TestProcessRunning:
+    """Processes vanishing or denying access mid-scan must not crash it."""
+
+    def test_disappearing_process_is_skipped(self):
+        good = MagicMock()
+        good.name.return_value = 'app.exe'
+        gone = MagicMock()
+        gone.name.side_effect = psutil.NoSuchProcess(pid=123)
+
+        with patch(
+            'updatechecker.common_tools.psutil.process_iter',
+            return_value=[gone, good],
+        ):
+            result = process_running(executable='app.exe')
+
+        assert result == [good]
+
+    def test_access_denied_on_exe_is_skipped(self):
+        denied = MagicMock()
+        denied.name.return_value = 'app.exe'
+        denied.exe.side_effect = psutil.AccessDenied(pid=1)
+
+        with patch(
+            'updatechecker.common_tools.psutil.process_iter',
+            return_value=[denied],
+        ):
+            result = process_running(exe_path='C:/x/app.exe')
+
+        assert result == []
+
+    def test_matching_by_exe_path(self):
+        proc = MagicMock()
+        proc.name.return_value = 'app.exe'
+        proc.exe.return_value = 'C:\\x\\app.exe'
+
+        with patch(
+            'updatechecker.common_tools.psutil.process_iter',
+            return_value=[proc],
+        ):
+            result = process_running(exe_path='C:/x/app.exe')
+
+        assert result == [proc]

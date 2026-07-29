@@ -44,6 +44,15 @@ class Entry(BaseModel):
             v = str(v)
         return v
 
+    @field_validator('kill_if_locked')
+    def validate_kill_if_locked(cls, v):
+        if v is True:
+            # A bare `true` gives process matching nothing to work with
+            raise ValueError(
+                "kill_if_locked must be the path to the executable to kill, not 'true'"
+            )
+        return v or None
+
     @field_validator('url')
     def validate_url(cls, v: str):
         try:
