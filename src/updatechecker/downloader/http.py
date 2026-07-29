@@ -80,6 +80,12 @@ class HttpDownloader:
                 "GET", url, headers=headers, follow_redirects=True, timeout=3000.0
             ) as response:
                 response.raise_for_status()
+                # A server that ignores Range returns 200 with the FULL file;
+                # combining such "chunks" would produce a corrupt result.
+                if response.status_code != 206:
+                    raise RuntimeError(
+                        f"Server ignored Range request (HTTP {response.status_code})"
+                    )
 
                 downloaded = 0
                 with open(chunk_file, 'wb') as f:
@@ -88,6 +94,11 @@ class HttpDownloader:
                         downloaded += len(chunk)
                         if progress_callback:
                             progress_callback(downloaded, chunk_size)
+
+            if downloaded != chunk_size:
+                raise RuntimeError(
+                    f"Chunk size mismatch: got {downloaded} bytes, expected {chunk_size}"
+                )
         except Exception as e:
             log.warning(f"Failed to download chunk {chunk_num} ({start}-{end}): {e}")
             raise

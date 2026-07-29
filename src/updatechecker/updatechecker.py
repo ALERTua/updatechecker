@@ -61,6 +61,39 @@ def prepare_entry(entry_dict: dict, name: str, variables: dict) -> Entry:
     return Entry(**entry, name=name)
 
 
+def _download_to_target(
+    downloader, url: str, target: Path, chunked_download: bool | None = None
+) -> bool:
+    """Download url into target via a temporary .part file and atomic replace.
+
+    Keeps the existing target intact if the download fails mid-way.
+
+    Returns:
+        True on success, False on failure.
+    """
+    part_file = target.with_name(target.name + '.part')
+    result = downloader.download_file_from_url(
+        url, part_file, chunked_download=chunked_download
+    )
+
+    success = False
+    if result is not None and part_file.exists():
+        try:
+            os.replace(part_file, target)
+            success = True
+        except OSError as e:
+            log.error(
+                f"Couldn't move downloaded file to '{target}': {type(e).__name__} {e}"
+            )
+
+    try:
+        part_file.unlink(missing_ok=True)
+    except OSError as e:
+        log.debug(f"Couldn't remove part file '{part_file}': {e}")
+
+    return success
+
+
 def process_entry(entry, force: bool = False, gh_token: str | None = None):
     """Process a single entry for update checking.
 
