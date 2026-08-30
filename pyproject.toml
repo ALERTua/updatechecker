@@ -9,7 +9,7 @@ dependencies = [
     "httpx",
     "psutil",
     "pydantic",
-    "PyGithub",
+    "pygithub",
     "pyyaml",
     "rich",
     "tenacity",
