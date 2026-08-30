@@ -4,6 +4,7 @@ import re
 
 from github import Auth, Github
 from github.GitRelease import GitRelease
+from github.PaginatedList import PaginatedList
 
 from ..logger import log
 from .http import HttpDownloader
@@ -60,7 +61,7 @@ class GitHubDownloader(HttpDownloader):
             log.warning(f"'{package}' is not a valid GitHub repository: {e}")
             return None
 
-    def get_releases(self, package: str) -> list[GitRelease] | None:
+    def get_releases(self, package: str) -> PaginatedList[GitRelease] | None:
         """Fetch all releases for a GitHub package.
 
         Args:
@@ -71,8 +72,7 @@ class GitHubDownloader(HttpDownloader):
         """
         try:
             repo = self._client.get_repo(package)
-            releases = repo.get_releases()
-            return list(releases)
+            return repo.get_releases()
         except Exception as e:  # noqa: BLE001 (see validate_package)
             token_str = 'with token' if self._token else 'without token'
             log.warning(f"GitHub API error for package '{package}' {token_str}: {e}")

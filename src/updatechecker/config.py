@@ -24,6 +24,7 @@ class Entry(BaseModel):
     md5: str | None = None
     target: str
     git_asset: str | None = None
+    allow_prerelease: bool = False
     unzip_target: str | None = None
     kill_if_locked: str | bool | None = False
     relaunch: bool | None = False
@@ -31,9 +32,9 @@ class Entry(BaseModel):
     arguments: str | None = None
     archive_password: str | None = None
     variables: dict | None = None
-    flatten: bool | None = False
+    flatten: bool = False
     chunked_download: bool | None = None  # None = auto, True = force, False = never
-    use_content_length_check: bool | None = True
+    use_content_length_check: bool = True
 
     @field_validator('unzip_target')
     def validate_unzip_target(cls, v: str):

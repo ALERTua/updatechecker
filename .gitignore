@@ -28,3 +28,6 @@ plans/
 
 # Cache files for HEAD request caching
 *.meta.json
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+graft/

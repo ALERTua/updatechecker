@@ -139,6 +139,7 @@ entries:
 
     url: "https://github.com/username/repo"  # file uri or git repo uri
     git_asset: ''  # a regexp pattern to get the git release file if the url is a github repo
+    allow_prerelease: false  # allow using the most recent release instead of the latest release
     md5: "https://www.md5.file/uri"  # uri that contains an md5 hash for the downloaded file
     # notice paths are surrounded with single quotes while URL and other strings - with double quotes
     target: '{{drive_root}}\file.zip'  # full file directory path or full file path to download the file to

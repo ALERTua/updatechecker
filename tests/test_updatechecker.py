@@ -246,3 +246,70 @@ class TestEntryErrorIsolation:
 
         assert failed == 1
         assert mock_process.call_count == 2
+
+
+class TestAllowPrerelease:
+    """Release choice: prereleases are used only when the entry opts in."""
+
+    def _entry(self, **kwargs):
+        from updatechecker.config import Entry
+
+        return Entry(
+            name='test',
+            url='https://github.com/owner/repo',
+            target='./file.zip',
+            git_asset=r'file\.zip',
+            **kwargs,
+        )
+
+    def _downloader(self, releases=None, latest=None):
+        from unittest.mock import Mock
+
+        downloader = Mock()
+        downloader.validate_package.return_value = 'owner/repo'
+        downloader.get_releases.return_value = releases
+        downloader.get_latest_release.return_value = latest
+        # No asset url stops process_entry right after the release is chosen
+        downloader.get_asset_url.return_value = None
+        return downloader
+
+    def _run(self, entry, downloader):
+        from updatechecker.updatechecker import process_entry
+
+        with patch(
+            'updatechecker.updatechecker.DownloaderFactory.create',
+            return_value=downloader,
+        ):
+            process_entry(entry)
+
+    def test_prerelease_picks_the_most_recent_release(self):
+        newest, older = 'newest-release', 'older-release'
+        downloader = self._downloader(releases=[newest, older], latest='stable')
+
+        self._run(self._entry(allow_prerelease=True), downloader)
+
+        downloader.get_latest_release.assert_not_called()
+        assert downloader.get_asset_url.call_args.args[0] == newest
+
+    def test_default_picks_the_latest_stable_release(self):
+        downloader = self._downloader(releases=['newest-release'], latest='stable')
+
+        self._run(self._entry(), downloader)
+
+        downloader.get_releases.assert_not_called()
+        assert downloader.get_asset_url.call_args.args[0] == 'stable'
+
+    def test_prerelease_without_any_release_stops(self):
+        downloader = self._downloader(releases=[])
+
+        self._run(self._entry(allow_prerelease=True), downloader)
+
+        downloader.get_asset_url.assert_not_called()
+
+    def test_prerelease_survives_a_github_api_error(self):
+        # get_releases returns None when the API call failed
+        downloader = self._downloader(releases=None)
+
+        self._run(self._entry(allow_prerelease=True), downloader)
+
+        downloader.get_asset_url.assert_not_called()

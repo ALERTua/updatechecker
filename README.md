@@ -3,7 +3,7 @@
 [![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/badges/StandWithUkraine.svg)](https://stand-with-ukraine.pp.ua)
 [![Russian Warship Go Fuck Yourself](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/badges/RussianWarship.svg)](https://stand-with-ukraine.pp.ua)
 
-<img src="media/icon.png" height="320">
+<img src="media/icon.png" width=256 alt="icon">
 
 # Update Checker
 
@@ -114,21 +114,22 @@ entries:
 
 #### Entry Options
 
-| Option                     | Type   | Description                                               |
-|----------------------------|--------|-----------------------------------------------------------|
-| `url`                      | string | URL to download from or GitHub repo URL                   |
-| `git_asset`                | string | Regex pattern to match GitHub release asset               |
-| `md5`                      | string | URL containing MD5 hash for verification                  |
-| `target`                   | string | Full path to save downloaded file                         |
-| `unzip_target`             | string | Directory to extract archive to                           |
-| `archive_password`         | string | Password for encrypted archives                           |
-| `kill_if_locked`           | string | Process path/name to kill if file is locked               |
-| `relaunch`                 | bool   | Relaunch the killed process (default: false)              |
-| `launch`                   | string | Path to launch after download                             |
-| `arguments`                | string | Arguments for launch command                              |
-| `flatten`                  | bool   | Skip redundant parent folder in zip (default: false)      |
-| `chunked_download`         | bool   | Enable parallel chunked download (default: auto-detect)   |
-| `use_content_length_check` | bool   | Use file size check when metadata missing (default: true) |
+| Option                     | Type   | Description                                                       |
+|----------------------------|--------|-------------------------------------------------------------------|
+| `url`                      | string | URL to download from or GitHub repo URL                           |
+| `git_asset`                | string | Regex pattern to match GitHub release asset                       |
+| `allow_prerelease`         | bool   | Allow using the most recent release instead of the latest release |
+| `md5`                      | string | URL containing MD5 hash for verification                          |
+| `target`                   | string | Full path to save downloaded file                                 |
+| `unzip_target`             | string | Directory to extract archive to                                   |
+| `archive_password`         | string | Password for encrypted archives                                   |
+| `kill_if_locked`           | string | Process path/name to kill if file is locked                       |
+| `relaunch`                 | bool   | Relaunch the killed process (default: false)                      |
+| `launch`                   | string | Path to launch after download                                     |
+| `arguments`                | string | Arguments for launch command                                      |
+| `flatten`                  | bool   | Skip redundant parent folder in zip (default: false)              |
+| `chunked_download`         | bool   | Enable parallel chunked download (default: auto-detect)           |
+| `use_content_length_check` | bool   | Use file size check when metadata missing (default: true)         |
 
 
 ### CLI Usage

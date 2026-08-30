@@ -126,7 +126,7 @@ def launch_detached(program: str, arguments: str | None = None) -> None:
         log.warning(f"Couldn't launch '{program}': {e}")
 
 
-def process_entry(entry, force: bool = False, gh_token: str | None = None):
+def process_entry(entry: Entry, force: bool = False, gh_token: str | None = None):
     """Process a single entry for update checking.
 
     Args:
@@ -139,6 +139,7 @@ def process_entry(entry, force: bool = False, gh_token: str | None = None):
     url = entry.url
     url_md5 = entry.md5
     git_asset = entry.git_asset
+    allow_prerelease = entry.allow_prerelease
     launch = entry.launch
     arguments = entry.arguments
     kill_if_locked = entry.kill_if_locked
@@ -149,16 +150,28 @@ def process_entry(entry, force: bool = False, gh_token: str | None = None):
 
     if git_asset is not None:
         log.debug(f"Trying git package for git asset {git_asset}")
+        # noinspection unresolved-references
         git_package = downloader.validate_package(url)
         if git_package is None:
             log.warning("Url is not for a file and not a git package. Cannot proceed")
             return
 
-        release = downloader.get_latest_release(git_package)
+        release = None
+        if allow_prerelease:
+            try:
+                # noinspection unresolved-references
+                release = downloader.get_releases(git_package)[0]
+            except (IndexError, TypeError):
+                pass
+        else:
+            # noinspection unresolved-references
+            release = downloader.get_latest_release(git_package)
+
         if release is None:
             log.warning("No releases found for git package. Cannot proceed")
             return
 
+        # noinspection unresolved-references
         url = downloader.get_asset_url(release, git_asset)
         if not url:
             log.warning(
@@ -175,7 +188,8 @@ def process_entry(entry, force: bool = False, gh_token: str | None = None):
     target = entry.target
     target = Path(target)
     if target.is_dir():
-        entry.target = target = target / url_file
+        target = entry.target = str(target / url_file)
+        target = Path(target)
 
     # Check if file needs update - skip if force is True
     if force:
@@ -300,6 +314,7 @@ def process_entry(entry, force: bool = False, gh_token: str | None = None):
 
     if killed:
         if relaunch is True and kill_if_locked is not None:
+            # noinspection bad-argument-type
             launch_detached(kill_if_locked, arguments)
     elif launch:
         launch_detached(launch, arguments)

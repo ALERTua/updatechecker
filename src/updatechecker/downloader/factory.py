@@ -1,12 +1,8 @@
 """Downloader factory for creating appropriate downloader based on entry type."""
 
-from typing import TYPE_CHECKING
-
+from ..config import Entry
 from .github import GitHubDownloader
 from .http import HttpDownloader
-
-if TYPE_CHECKING:
-    from ..config import Entry
 
 
 class DownloaderFactory:
@@ -19,7 +15,7 @@ class DownloaderFactory:
 
     @staticmethod
     def create(
-        entry: "Entry", gh_token: str | None = None
+        entry: Entry, gh_token: str | None = None
     ) -> HttpDownloader | GitHubDownloader:
         """Create appropriate downloader for the given entry.
 

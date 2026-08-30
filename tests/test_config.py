@@ -71,3 +71,10 @@ class TestKillIfLockedValidation:
     def test_path_is_kept(self):
         entry = self._entry(kill_if_locked='C:/apps/tool.exe')
         assert entry.kill_if_locked == 'C:/apps/tool.exe'
+
+
+def test_allow_prerelease_defaults_to_false():
+    from updatechecker.config import Entry
+
+    entry = Entry(name='test', url='https://example.com/file.zip', target='./file.zip')
+    assert entry.allow_prerelease is False
