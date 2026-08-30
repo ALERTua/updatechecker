@@ -1,6 +1,0 @@
-logs/
-temp/
-uv.lock
-*.pyc
-.venv/
-*.egg-info/
